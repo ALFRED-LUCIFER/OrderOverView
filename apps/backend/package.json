@@ -31,7 +31,6 @@
     "class-validator": "^0.14.0",
     "class-transformer": "^0.5.1",
     "groq-sdk": "^0.7.0",
-    "puppeteer": "^21.0.0",
     "socket.io": "^4.7.0",
     "swagger-ui-express": "^5.0.0",
     "reflect-metadata": "^0.1.13",
