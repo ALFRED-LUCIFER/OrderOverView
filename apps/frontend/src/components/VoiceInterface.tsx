@@ -123,7 +123,12 @@ export const VoiceInterface: React.FC = () => {
     }
     
     console.log('🔌 Connecting to WebSocket:', wsUrl);
-    socketRef.current = io(wsUrl);
+    socketRef.current = io(wsUrl, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: true,
+      autoConnect: true,
+    });
     
     socketRef.current.on('connected', (data) => {
       console.log('LISA connected with session:', data.sessionId);
@@ -180,7 +185,19 @@ export const VoiceInterface: React.FC = () => {
 
     socketRef.current.on('connect_error', (error) => {
       console.error('WebSocket connection error:', error);
-      setError('Unable to connect to voice service');
+      console.error('Error type:', (error as any).type);
+      console.error('Error message:', error.message);
+      console.error('Error description:', (error as any).description);
+      
+      let errorMessage = 'Unable to connect to voice service';
+      if (error.message?.includes('xhr poll error')) {
+        errorMessage = 'Connection failed - backend may be offline';
+        console.log('🔧 XHR polling failed, trying direct WebSocket...');
+      } else if (error.message?.includes('websocket error')) {
+        errorMessage = 'WebSocket connection failed, falling back to polling';
+      }
+      
+      setError(errorMessage);
       setStatus('error');
     });
 
