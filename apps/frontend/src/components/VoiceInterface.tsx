@@ -99,8 +99,12 @@ export const VoiceInterface: React.FC = () => {
       console.log('🎤 Speech synthesis available, waiting for user interaction');
     }
 
-    // Initialize WebSocket connection ONCE
-    socketRef.current = io(import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3001');
+    // Initialize WebSocket connection ONCE - with production fallback
+    const wsUrl = import.meta.env.VITE_WEBSOCKET_URL || 
+                  (window.location.hostname.includes('vercel.app') ? 'wss://orderoverview-dkro.onrender.com' : 'ws://localhost:3001');
+    
+    console.log('🔌 Connecting to WebSocket:', wsUrl);
+    socketRef.current = io(wsUrl);
     
     socketRef.current.on('connected', (data) => {
       console.log('LISA connected with session:', data.sessionId);
