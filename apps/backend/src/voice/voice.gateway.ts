@@ -16,6 +16,8 @@ import { VoiceService } from './voice.service';
       'http://localhost:5173', 
       'https://localhost:5173',
       'https://order-over-view-frontend.vercel.app',
+      'https://order-over-view-frontend-git-main-soumitras-projects-cad3dd70.vercel.app',
+      /https:\/\/order-over-view-frontend.*\.vercel\.app$/,
       /https:\/\/.*\.vercel\.app$/,
       process.env.CLIENT_URL
     ].filter(Boolean),

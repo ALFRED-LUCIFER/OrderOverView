@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISA Voice Interface Test - Production</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: rgba(255,255,255,0.1); 
+            padding: 30px; 
+            border-radius: 15px; 
+            backdrop-filter: blur(10px);
+        }
+        .status { 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            backdrop-filter: blur(5px);
+        }
+        .success { background: rgba(76, 175, 80, 0.3); border: 2px solid #4CAF50; }
+        .error { background: rgba(244, 67, 54, 0.3); border: 2px solid #f44336; }
+        .info { background: rgba(33, 150, 243, 0.3); border: 2px solid #2196F3; }
+        .warning { background: rgba(255, 193, 7, 0.3); border: 2px solid #FFC107; }
+        
+        button { 
+            padding: 15px 25px; 
+            margin: 10px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+            color: white;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        button:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #log { 
+            background: rgba(0,0,0,0.5); 
+            padding: 20px; 
+            border-radius: 10px; 
+            height: 400px; 
+            overflow-y: auto; 
+            font-family: 'Monaco', 'Menlo', monospace; 
+            font-size: 14px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .voice-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .lisa-status {
+            font-size: 24px;
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 LISA Voice Interface - Production Test</h1>
+        <p>Testing LISA voice assistant connection to your Render backend from the browser.</p>
+        
+        <div class="status info">
+            <strong>🔧 Production Configuration:</strong><br>
+            Backend API: https://orderoverview-dkro.onrender.com<br>
+            WebSocket: wss://orderoverview-dkro.onrender.com<br>
+            Frontend: https://order-over-view-frontend.vercel.app
+        </div>
+
+        <div id="lisaStatus" class="lisa-status">
+            🤖 LISA Status: Initializing...
+        </div>
+
+        <div class="voice-controls">
+            <button onclick="connectToLisa()">🔌 Connect to LISA</button>
+            <button onclick="testLisaVoice()" id="testBtn" disabled>🎤 Test LISA Voice</button>
+            <button onclick="sendTestCommand()">💬 Send Test Command</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+        </div>
+
+        <div id="connectionStatus" class="status info">Ready to connect to LISA...</div>
+        
+        <h3>🔍 Connection Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.0/socket.io.min.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('connectionStatus');
+        const lisaStatus = document.getElementById('lisaStatus');
+        const testBtn = document.getElementById('testBtn');
+        
+        let socket = null;
+        let lisaConnected = false;
+
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span style="color: #888">[${timestamp}]</span> ${message}`;
+            
+            const colors = {
+                error: '#ff6b6b',
+                success: '#51cf66',
+                warning: '#ffd43b',
+                info: '#74c0fc'
+            };
+            
+            logEntry.style.color = colors[type] || colors.info;
+            logEntry.style.marginBottom = '5px';
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateStatus(message, className) {
+            status.textContent = message;
+            status.className = `status ${className}`;
+        }
+        
+        function updateLisaStatus(message, isConnected = false) {
+            lisaStatus.innerHTML = message;
+            lisaConnected = isConnected;
+            testBtn.disabled = !isConnected;
+        }
+
+        function clearLog() {
+            log.innerHTML = '';
+        }
+
+        function connectToLisa() {
+            addLog('🔌 Connecting to LISA voice assistant...', 'info');
+            updateStatus('Connecting to LISA...', 'info');
+            updateLisaStatus('🔄 Connecting to LISA...');
+
+            if (socket) {
+                socket.disconnect();
+            }
+
+            socket = io('wss://orderoverview-dkro.onrender.com', {
+                timeout: 10000,
+                transports: ['websocket', 'polling']
+            });
+
+            socket.on('connect', () => {
+                addLog('✅ Socket.IO connected successfully!', 'success');
+                addLog(`   Socket ID: ${socket.id}`, 'success');
+                addLog(`   Transport: ${socket.io.engine.transport.name}`, 'success');
+                updateStatus('Socket.IO: Connected!', 'success');
+            });
+
+            socket.on('connected', (data) => {
+                addLog('🎉 LISA voice assistant connected!', 'success');
+                addLog(`   Session: ${data.sessionId}`, 'success');
+                addLog(`   Agent: ${data.agent}`, 'success');
+                addLog(`   Welcome: ${data.message}`, 'success');
+                
+                updateStatus('LISA: Ready and Connected!', 'success');
+                updateLisaStatus(`🤖 ${data.agent}: Ready for voice commands!`, true);
+            });
+
+            socket.on('voice-response', (data) => {
+                addLog('🗨️ LISA responded:', 'success');
+                addLog(`   "${data.response}"`, 'success');
+                if (data.action) addLog(`   Action: ${data.action}`, 'info');
+                if (data.confidence) addLog(`   Confidence: ${data.confidence}`, 'info');
+                
+                // Speak the response if supported
+                if (data.shouldSpeak && 'speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(data.response);
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.0;
+                    speechSynthesis.speak(utterance);
+                    addLog('🔊 LISA speaking response', 'info');
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                addLog(`❌ Connection error: ${error.message}`, 'error');
+                updateStatus('Connection Failed!', 'error');
+                updateLisaStatus('❌ LISA: Connection Failed');
+            });
+
+            socket.on('disconnect', (reason) => {
+                addLog(`🔌 Disconnected: ${reason}`, 'warning');
+                updateStatus('Disconnected', 'warning');
+                updateLisaStatus('🔌 LISA: Disconnected');
+            });
+        }
+
+        function sendTestCommand() {
+            if (!socket || !socket.connected) {
+                addLog('❌ Not connected to LISA. Connect first.', 'error');
+                return;
+            }
+
+            const testCommands = [
+                "Hello LISA, are you working?",
+                "Show me all orders",
+                "How many customers do we have?",
+                "What's the status of our orders?"
+            ];
+
+            const command = testCommands[Math.floor(Math.random() * testCommands.length)];
+            addLog(`💬 Sending: "${command}"`, 'info');
+
+            socket.emit('voice-command', {
+                transcript: command,
+                isEndOfSpeech: true,
+                interimResults: false,
+                useNaturalConversation: true
+            });
+        }
+
+        function testLisaVoice() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                addLog('❌ Speech recognition not supported in this browser', 'error');
+                return;
+            }
+
+            const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                addLog('🎤 Listening... Say something to LISA', 'info');
+                updateStatus('Listening to your voice...', 'info');
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                addLog(`🗣️ You said: "${transcript}"`, 'info');
+                
+                if (socket && socket.connected) {
+                    socket.emit('voice-command', {
+                        transcript: transcript,
+                        isEndOfSpeech: true,
+                        interimResults: false,
+                        useNaturalConversation: true
+                    });
+                }
+            };
+
+            recognition.onerror = (event) => {
+                addLog(`❌ Speech recognition error: ${event.error}`, 'error');
+                updateStatus('Speech recognition failed', 'error');
+            };
+
+            recognition.onend = () => {
+                addLog('🎤 Speech recognition ended', 'info');
+                updateStatus('Voice input complete', 'success');
+            };
+
+            recognition.start();
+        }
+
+        // Auto-connect on page load
+        window.addEventListener('load', () => {
+            addLog('🚀 LISA Voice Interface Test loaded', 'info');
+            addLog('Click "Connect to LISA" to start testing', 'info');
+        });
+    </script>
+</body>
+</html>
