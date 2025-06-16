@@ -63,10 +63,6 @@ const DashboardPage = () => {
     );
   }
 
-  // Ensure data is always an array to prevent reduce errors
-  const customersData: Customer[] = Array.isArray(customers) ? customers : [];
-  const ordersData: Order[] = Array.isArray(orders) ? orders : [];
-
   // Calculate metrics
   const totalRevenue = ordersData.reduce((sum, order) => sum + order.totalPrice, 0);
   const pendingOrders = ordersData.filter(order => order.status === 'PENDING').length;
