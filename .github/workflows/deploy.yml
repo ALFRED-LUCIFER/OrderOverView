@@ -29,7 +29,7 @@ jobs:
         run: |
           # Clean any existing node_modules and lockfile issues
           rm -rf node_modules apps/*/node_modules
-          pnpm install --no-frozen-lockfile
+          PUPPETEER_SKIP_DOWNLOAD=true pnpm install --no-frozen-lockfile
 
       - name: Generate Prisma client
         run: |

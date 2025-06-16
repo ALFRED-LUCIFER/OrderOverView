@@ -45,6 +45,8 @@ services:
         value: https://your-frontend-url.onrender.com
       - key: DISABLE_SWAGGER
         value: false  # Enable Swagger in production for API documentation
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: true  # Skip Chrome download during deployment
 
 databases:
   - name: glass-order-db
