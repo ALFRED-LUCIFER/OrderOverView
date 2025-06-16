@@ -27,7 +27,7 @@ async function bootstrap() {
         transform: true,
     }));
     app.setGlobalPrefix('api');
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.DISABLE_SWAGGER !== 'true') {
         const config = new swagger_1.DocumentBuilder()
             .setTitle('Glass Order Management API')
             .setDescription('API for managing glass orders and customers')
@@ -47,7 +47,7 @@ async function bootstrap() {
         await app.listen(port);
         const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
         console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
-        if (process.env.NODE_ENV !== 'production') {
+        if (process.env.DISABLE_SWAGGER !== 'true') {
             console.log(`📚 Swagger docs available at: ${protocol}://localhost:${port}/api/docs`);
         }
         console.log(`📡 WebSocket available at: ${protocol === 'https' ? 'wss' : 'ws'}://localhost:${port}`);

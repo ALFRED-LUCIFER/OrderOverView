@@ -43,6 +43,8 @@ services:
         value: 3600000
       - key: CLIENT_URL
         value: https://your-frontend-url.onrender.com
+      - key: DISABLE_SWAGGER
+        value: false  # Enable Swagger in production for API documentation
 
 databases:
   - name: glass-order-db
