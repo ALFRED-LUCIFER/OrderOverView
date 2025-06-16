@@ -29,9 +29,15 @@ export class AudioService {
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private speechQueue: Array<{ text: string; options?: TTSOptions; resolve: () => void; reject: (error: Error) => void }> = [];
   private isSpeaking = false;
+  private speechTimeout: NodeJS.Timeout | null = null;
+  private speechStartTime: number = 0;
 
   constructor() {
+    // Safely assign speechSynthesis, handle cases where it might be undefined
     this.speechSynthesis = window.speechSynthesis;
+    if (!this.speechSynthesis) {
+      console.warn('⚠️ window.speechSynthesis is not available in this environment');
+    }
     this.setupVoiceLoadingHandler();
     this.setupPageVisibilityHandler();
   }
@@ -123,9 +129,23 @@ export class AudioService {
     }
 
     console.log(`🗣️ Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+    console.log(`🔍 Speech state - isSpeaking: ${this.isSpeaking}, queueLength: ${this.speechQueue.length}`);
 
     return new Promise((resolve, reject) => {
-      // Add to queue if currently speaking
+      // Check if speechSynthesis is available first
+      if (!this.speechSynthesis) {
+        console.error('❌ speechSynthesis not available');
+        reject(new Error('speechSynthesis not available in this environment'));
+        return;
+      }
+
+      // Stop any current speech before starting new one
+      if (this.isSpeaking) {
+        console.log('🛑 Stopping current speech to start new one...');
+        this.stopSpeaking();
+      }
+
+      // Add to queue if currently speaking (after stop attempt)
       if (this.isSpeaking) {
         console.log('📝 Adding to speech queue...');
         this.speechQueue.push({ text, options, resolve, reject });
@@ -142,7 +162,15 @@ export class AudioService {
   stopSpeaking(): void {
     console.log('🛑 Stopping speech...');
     
-    this.speechSynthesis.cancel();
+    this.clearSpeechTimeout();
+    
+    // Check if speechSynthesis is available before trying to cancel
+    if (this.speechSynthesis && typeof this.speechSynthesis.cancel === 'function') {
+      this.speechSynthesis.cancel();
+    } else {
+      console.warn('⚠️ speechSynthesis not available or cancel method not found');
+    }
+    
     this.currentUtterance = null;
     this.isSpeaking = false;
     
@@ -151,6 +179,39 @@ export class AudioService {
       reject(new Error('Speech interrupted'));
     });
     this.speechQueue = [];
+  }
+
+  /**
+   * Force reset speech state if it gets stuck
+   */
+  resetSpeechState(): void {
+    console.log('🔄 Force resetting speech state...');
+    this.clearSpeechTimeout();
+    this.isSpeaking = false;
+    this.currentUtterance = null;
+    this.speechQueue = [];
+    
+    if (this.speechSynthesis && typeof this.speechSynthesis.cancel === 'function') {
+      this.speechSynthesis.cancel();
+    }
+  }
+
+  private clearSpeechTimeout(): void {
+    if (this.speechTimeout) {
+      clearTimeout(this.speechTimeout);
+      this.speechTimeout = null;
+    }
+  }
+
+  private forceSpeechReset(): void {
+    console.log('🚨 Force resetting stuck speech state');
+    this.clearSpeechTimeout();
+    this.isSpeaking = false;
+    this.currentUtterance = null;
+    
+    if (this.speechSynthesis && typeof this.speechSynthesis.cancel === 'function') {
+      this.speechSynthesis.cancel();
+    }
   }
 
   /**
@@ -211,8 +272,16 @@ export class AudioService {
   }
 
   private setupVoiceLoadingHandler(): void {
+    // Check if speechSynthesis is available
+    if (!this.speechSynthesis) {
+      console.warn('⚠️ speechSynthesis not available, skipping voice loading setup');
+      return;
+    }
+
     // Handle voice loading
     const loadVoices = () => {
+      if (!this.speechSynthesis) return;
+      
       this.availableVoices = this.speechSynthesis.getVoices();
       if (this.availableVoices.length > 0) {
         this.voicesLoaded = true;
@@ -336,6 +405,16 @@ export class AudioService {
       }, 500);
       
       try {
+        // Check if speechSynthesis is available before testing
+        if (!this.speechSynthesis) {
+          if (!resolved) {
+            resolved = true;
+            console.warn('⚠️ speechSynthesis not available for testing');
+            resolve(); // Don't fail initialization, just skip the test
+          }
+          return;
+        }
+        
         this.speechSynthesis.speak(testUtterance);
       } catch (error) {
         if (!resolved) {
@@ -354,13 +433,20 @@ export class AudioService {
     reject: (error: Error) => void
   ): void {
     try {
+      console.log('🎤 Starting speech synthesis...');
+      console.log(`🔍 Available voices: ${this.availableVoices.length}, Preferred voice: ${this.preferredVoice?.name || 'none'}`);
+      
       this.isSpeaking = true;
+      this.speechStartTime = Date.now();
 
       const utterance = new SpeechSynthesisUtterance(text);
       
       // Configure voice and speech parameters
       if (this.preferredVoice) {
         utterance.voice = this.preferredVoice;
+        console.log(`🎭 Using voice: ${this.preferredVoice.name}`);
+      } else {
+        console.log('⚠️ No preferred voice set, using default');
       }
 
       utterance.rate = options.rate || 0.9;
@@ -368,9 +454,29 @@ export class AudioService {
       utterance.volume = options.volume || 0.8;
       utterance.lang = options.lang || 'en-US';
 
+      console.log(`🎚️ Speech params - rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume}, lang: ${utterance.lang}`);
+
+      // Set up timeout to prevent stuck state (estimate: 10 chars per second at 0.9 rate)
+      const estimatedDuration = Math.max(3000, (text.length / 10) * 1000 / utterance.rate);
+      const timeoutDuration = Math.min(estimatedDuration + 5000, 30000); // Max 30 seconds
+      
+      console.log(`⏱️ Setting speech timeout: ${timeoutDuration}ms for text length: ${text.length}`);
+      
+      this.speechTimeout = setTimeout(() => {
+        console.warn('⚠️ Speech timeout - forcing reset');
+        this.forceSpeechReset();
+        reject(new Error('Speech timeout - utterance took too long'));
+      }, timeoutDuration);
+
+      let callbackFired = false;
+
       // Handle completion
       utterance.onend = () => {
+        if (callbackFired) return;
+        callbackFired = true;
+        
         console.log('✅ Speech completed');
+        this.clearSpeechTimeout();
         this.isSpeaking = false;
         this.currentUtterance = null;
         resolve();
@@ -379,7 +485,11 @@ export class AudioService {
 
       // Handle errors with Chrome-specific handling
       utterance.onerror = (event) => {
-        console.error('❌ Speech error:', event.error);
+        if (callbackFired) return;
+        callbackFired = true;
+        
+        console.error('❌ Speech error:', event.error, event);
+        this.clearSpeechTimeout();
         this.isSpeaking = false;
         this.currentUtterance = null;
         
@@ -401,9 +511,33 @@ export class AudioService {
       };
 
       this.currentUtterance = utterance;
+      
+      // Check if speechSynthesis is available before speaking
+      if (!this.speechSynthesis) {
+        console.error('❌ speechSynthesis not available at speech time');
+        this.clearSpeechTimeout();
+        this.isSpeaking = false;
+        reject(new Error('speechSynthesis not available in this environment'));
+        this.processQueue();
+        return;
+      }
+      
+      // Check if speechSynthesis has speak method
+      if (typeof this.speechSynthesis.speak !== 'function') {
+        console.error('❌ speechSynthesis.speak is not a function');
+        this.clearSpeechTimeout();
+        this.isSpeaking = false;
+        reject(new Error('speechSynthesis.speak method not available'));
+        this.processQueue();
+        return;
+      }
+
+      console.log('🚀 Calling speechSynthesis.speak()...');
       this.speechSynthesis.speak(utterance);
 
     } catch (error) {
+      console.error('❌ Exception in performSpeech:', error);
+      this.clearSpeechTimeout();
       this.isSpeaking = false;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       reject(new Error(`Failed to perform speech: ${errorMessage}`));

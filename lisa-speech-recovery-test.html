@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISA Speech State Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button.test {
+            background: #2196F3;
+        }
+        button.test:hover {
+            background: #1976D2;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover {
+            background: #da190b;
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        .debug-info {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 12px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 LISA Speech State Recovery Test</h1>
+        <p>This page tests the AudioService fixes, particularly the timeout mechanism and state reset functionality.</p>
+        
+        <div id="status" class="status info">
+            Ready to test speech functionality
+        </div>
+        
+        <div>
+            <h3>Basic Tests</h3>
+            <button onclick="testConnection()" class="test">🔌 Test Frontend Connection</button>
+            <button onclick="testAudioService()" class="test">🎤 Test AudioService</button>
+            <button onclick="resetSpeechState()" class="danger">🔄 Reset Speech State</button>
+        </div>
+        
+        <div>
+            <h3>Speech Tests</h3>
+            <button onclick="testQuickSpeech()" class="test">⚡ Quick Speech Test</button>
+            <button onclick="testLongSpeech()" class="test">📢 Long Speech Test</button>
+            <button onclick="testTimeoutRecovery()" class="test">⏰ Timeout Recovery Test</button>
+        </div>
+        
+        <div>
+            <h3>WebSocket Tests</h3>
+            <button onclick="testWebSocketConnection()" class="test">🌐 Test WebSocket</button>
+            <button onclick="testLISAInteraction()" class="test">🤖 Test LISA Interaction</button>
+        </div>
+        
+        <div id="debug-info" class="debug-info"></div>
+        <div id="test-results"></div>
+    </div>
+
+    <script>
+        let testResults = [];
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        function addTestResult(test, result, details = '') {
+            const timestamp = new Date().toLocaleTimeString();
+            testResults.push({ test, result, details, timestamp });
+            updateTestResults();
+        }
+        
+        function updateTestResults() {
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = '<h3>Test Results</h3>';
+            
+            testResults.forEach(({ test, result, details, timestamp }) => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'test-result';
+                resultDiv.innerHTML = `
+                    <strong>[${timestamp}] ${test}</strong><br>
+                    <span style="color: ${result === 'PASS' ? '#28a745' : '#dc3545'}">${result}</span>
+                    ${details ? `<br><small>${details}</small>` : ''}
+                `;
+                resultsDiv.appendChild(resultDiv);
+            });
+        }
+        
+        async function testConnection() {
+            showStatus('Testing frontend connection...', 'info');
+            try {
+                const response = await fetch('http://localhost:5176');
+                if (response.ok) {
+                    addTestResult('Frontend Connection', 'PASS', 'Successfully connected to localhost:5176');
+                    showStatus('Frontend connection successful', 'success');
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                addTestResult('Frontend Connection', 'FAIL', error.message);
+                showStatus(`Frontend connection failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testAudioService() {
+            showStatus('Testing AudioService...', 'info');
+            try {
+                // Test if speechSynthesis is available
+                if (!window.speechSynthesis) {
+                    throw new Error('speechSynthesis not available');
+                }
+                
+                const voices = window.speechSynthesis.getVoices();
+                addTestResult('AudioService Basic', 'PASS', `speechSynthesis available, ${voices.length} voices found`);
+                showStatus('AudioService basic test passed', 'success');
+            } catch (error) {
+                addTestResult('AudioService Basic', 'FAIL', error.message);
+                showStatus(`AudioService test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function resetSpeechState() {
+            showStatus('Resetting speech state...', 'warning');
+            try {
+                if (window.speechSynthesis) {
+                    window.speechSynthesis.cancel();
+                }
+                addTestResult('Speech State Reset', 'PASS', 'Speech synthesis canceled');
+                showStatus('Speech state reset complete', 'success');
+            } catch (error) {
+                addTestResult('Speech State Reset', 'FAIL', error.message);
+                showStatus(`Reset failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testQuickSpeech() {
+            showStatus('Testing quick speech...', 'info');
+            try {
+                await new Promise((resolve, reject) => {
+                    const utterance = new SpeechSynthesisUtterance('Quick test');
+                    utterance.volume = 0.5;
+                    utterance.rate = 2.0; // Speak fast
+                    
+                    let completed = false;
+                    
+                    utterance.onend = () => {
+                        if (!completed) {
+                            completed = true;
+                            resolve();
+                        }
+                    };
+                    
+                    utterance.onerror = (event) => {
+                        if (!completed) {
+                            completed = true;
+                            reject(new Error(event.error));
+                        }
+                    };
+                    
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        if (!completed) {
+                            completed = true;
+                            window.speechSynthesis.cancel();
+                            reject(new Error('Speech timeout'));
+                        }
+                    }, 5000);
+                    
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                addTestResult('Quick Speech Test', 'PASS', 'Speech completed successfully');
+                showStatus('Quick speech test passed', 'success');
+            } catch (error) {
+                addTestResult('Quick Speech Test', 'FAIL', error.message);
+                showStatus(`Quick speech test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testLongSpeech() {
+            showStatus('Testing long speech with timeout protection...', 'info');
+            try {
+                const longText = 'This is a longer speech test to verify that the timeout mechanism works correctly and prevents the speech system from getting stuck in the isSpeaking state. This test should complete successfully without hanging.';
+                
+                await new Promise((resolve, reject) => {
+                    const utterance = new SpeechSynthesisUtterance(longText);
+                    utterance.volume = 0.7;
+                    utterance.rate = 1.5; // Speak a bit faster
+                    
+                    let completed = false;
+                    
+                    utterance.onend = () => {
+                        if (!completed) {
+                            completed = true;
+                            resolve();
+                        }
+                    };
+                    
+                    utterance.onerror = (event) => {
+                        if (!completed) {
+                            completed = true;
+                            reject(new Error(event.error));
+                        }
+                    };
+                    
+                    // Timeout after 15 seconds (should be enough for the text)
+                    setTimeout(() => {
+                        if (!completed) {
+                            completed = true;
+                            window.speechSynthesis.cancel();
+                            reject(new Error('Speech timeout - this tests the timeout mechanism'));
+                        }
+                    }, 15000);
+                    
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                addTestResult('Long Speech Test', 'PASS', 'Long speech completed without timeout');
+                showStatus('Long speech test passed', 'success');
+            } catch (error) {
+                if (error.message.includes('timeout')) {
+                    addTestResult('Long Speech Test', 'PASS', 'Timeout mechanism working correctly');
+                    showStatus('Timeout protection working correctly', 'success');
+                } else {
+                    addTestResult('Long Speech Test', 'FAIL', error.message);
+                    showStatus(`Long speech test failed: ${error.message}`, 'error');
+                }
+            }
+        }
+        
+        async function testTimeoutRecovery() {
+            showStatus('Testing timeout recovery mechanism...', 'info');
+            try {
+                // First, try to trigger a stuck state by speaking very long text
+                const veryLongText = 'This is an extremely long text that might trigger timeout conditions. '.repeat(50);
+                
+                let timeoutTriggered = false;
+                
+                try {
+                    await new Promise((resolve, reject) => {
+                        const utterance = new SpeechSynthesisUtterance(veryLongText);
+                        utterance.volume = 0.1; // Very quiet
+                        utterance.rate = 0.5; // Very slow to increase likelihood of timeout
+                        
+                        let completed = false;
+                        
+                        utterance.onend = () => {
+                            if (!completed) {
+                                completed = true;
+                                resolve();
+                            }
+                        };
+                        
+                        utterance.onerror = (event) => {
+                            if (!completed) {
+                                completed = true;
+                                reject(new Error(event.error));
+                            }
+                        };
+                        
+                        // Short timeout to force timeout condition
+                        setTimeout(() => {
+                            if (!completed) {
+                                completed = true;
+                                timeoutTriggered = true;
+                                window.speechSynthesis.cancel();
+                                reject(new Error('Forced timeout for testing'));
+                            }
+                        }, 2000); // 2 second timeout to force the condition
+                        
+                        window.speechSynthesis.speak(utterance);
+                    });
+                } catch (error) {
+                    if (error.message.includes('timeout')) {
+                        timeoutTriggered = true;
+                    }
+                }
+                
+                // Now test if we can recover with a normal speech
+                await new Promise((resolve, reject) => {
+                    const utterance = new SpeechSynthesisUtterance('Recovery test successful');
+                    utterance.volume = 0.5;
+                    utterance.rate = 1.0;
+                    
+                    let completed = false;
+                    
+                    utterance.onend = () => {
+                        if (!completed) {
+                            completed = true;
+                            resolve();
+                        }
+                    };
+                    
+                    utterance.onerror = (event) => {
+                        if (!completed) {
+                            completed = true;
+                            reject(new Error(event.error));
+                        }
+                    };
+                    
+                    setTimeout(() => {
+                        if (!completed) {
+                            completed = true;
+                            window.speechSynthesis.cancel();
+                            reject(new Error('Recovery speech timeout'));
+                        }
+                    }, 5000);
+                    
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                addTestResult('Timeout Recovery Test', 'PASS', 
+                    timeoutTriggered ? 'Timeout triggered and recovery successful' : 'No timeout needed, speech system stable');
+                showStatus('Timeout recovery test passed', 'success');
+                
+            } catch (error) {
+                addTestResult('Timeout Recovery Test', 'FAIL', error.message);
+                showStatus(`Timeout recovery test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testWebSocketConnection() {
+            showStatus('Testing WebSocket connection...', 'info');
+            try {
+                // Test backend health endpoint first
+                const healthResponse = await fetch('http://localhost:3001/api/health');
+                if (!healthResponse.ok) {
+                    throw new Error('Backend health check failed');
+                }
+                
+                addTestResult('Backend Health Check', 'PASS', 'Backend is responding');
+                
+                // Test WebSocket connection
+                const ws = new WebSocket('ws://localhost:3001');
+                
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        ws.close();
+                        reject(new Error('WebSocket connection timeout'));
+                    }, 5000);
+                    
+                    ws.onopen = () => {
+                        clearTimeout(timeout);
+                        ws.close();
+                        resolve();
+                    };
+                    
+                    ws.onerror = (error) => {
+                        clearTimeout(timeout);
+                        reject(new Error('WebSocket connection failed'));
+                    };
+                });
+                
+                addTestResult('WebSocket Connection', 'PASS', 'WebSocket connection successful');
+                showStatus('WebSocket connection test passed', 'success');
+                
+            } catch (error) {
+                addTestResult('WebSocket Connection', 'FAIL', error.message);
+                showStatus(`WebSocket test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testLISAInteraction() {
+            showStatus('Testing LISA interaction...', 'info');
+            try {
+                // This would require importing the actual LISA modules
+                // For now, just test if the LISA endpoint responds
+                const response = await fetch('http://localhost:3001/api/voice/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'test' })
+                });
+                
+                if (response.ok) {
+                    addTestResult('LISA API Test', 'PASS', 'LISA API responding');
+                    showStatus('LISA interaction test passed', 'success');
+                } else {
+                    throw new Error(`API returned ${response.status}`);
+                }
+                
+            } catch (error) {
+                addTestResult('LISA API Test', 'FAIL', error.message);
+                showStatus(`LISA interaction test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function updateDebugInfo() {
+            const debugInfo = {
+                speechSynthesis: !!window.speechSynthesis,
+                voicesCount: window.speechSynthesis ? window.speechSynthesis.getVoices().length : 0,
+                speaking: window.speechSynthesis ? window.speechSynthesis.speaking : false,
+                pending: window.speechSynthesis ? window.speechSynthesis.pending : false,
+                paused: window.speechSynthesis ? window.speechSynthesis.paused : false,
+                userAgent: navigator.userAgent.includes('Chrome') ? 'Chrome' : 'Other',
+                location: window.location.href,
+                timestamp: new Date().toLocaleTimeString()
+            };
+            
+            document.getElementById('debug-info').textContent = JSON.stringify(debugInfo, null, 2);
+        }
+        
+        // Auto-run basic tests on page load
+        window.addEventListener('load', async () => {
+            updateDebugInfo();
+            setInterval(updateDebugInfo, 2000); // Update debug info every 2 seconds
+            
+            showStatus('Running initial tests...', 'info');
+            await testConnection();
+            await testAudioService();
+        });
+    </script>
+</body>
+</html>

@@ -87,6 +87,9 @@ export const VoiceInterface: React.FC = () => {
     const voiceEnabled = import.meta.env.VITE_ENABLE_VOICE === 'true';
     if (!voiceEnabled) return;
 
+    // Reset any stuck speech state when component mounts
+    audioService.resetSpeechState();
+
     // Load speech synthesis voices
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
@@ -712,6 +715,18 @@ export const VoiceInterface: React.FC = () => {
                     if (audioReady) {
                       speakResponse("Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.");
                     }
+                  }}
+                  variant="outlined"
+                />
+                <Chip
+                  label="Reset Speech"
+                  size="small"
+                  color="warning"
+                  onClick={() => {
+                    console.log('🔄 Manually resetting speech state...');
+                    audioService.resetSpeechState();
+                    setStatus('idle');
+                    setError('');
                   }}
                   variant="outlined"
                 />
