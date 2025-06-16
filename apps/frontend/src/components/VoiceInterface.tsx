@@ -99,9 +99,20 @@ export const VoiceInterface: React.FC = () => {
       console.log('🎤 Speech synthesis available, waiting for user interaction');
     }
 
-    // Initialize WebSocket connection ONCE - with production fallback
-    const wsUrl = import.meta.env.VITE_WEBSOCKET_URL || 
-                  (window.location.hostname.includes('vercel.app') ? 'wss://orderoverview-dkro.onrender.com' : 'ws://localhost:3001');
+    // Initialize WebSocket connection ONCE - with explicit production URLs
+    let wsUrl: string;
+    
+    // Force production URL for Vercel deployments
+    if (window.location.hostname.includes('vercel.app')) {
+      wsUrl = 'wss://orderoverview-dkro.onrender.com';
+      console.log('🌐 Detected Vercel deployment, using production backend');
+    } else if (import.meta.env.VITE_WEBSOCKET_URL) {
+      wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
+      console.log('🔧 Using environment variable VITE_WEBSOCKET_URL');
+    } else {
+      wsUrl = 'ws://localhost:3001';
+      console.log('🏠 Using local development URL');
+    }
     
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     socketRef.current = io(wsUrl);
