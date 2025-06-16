@@ -1,0 +1,116 @@
+// This is your Prisma schema file.
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Glass type enums
+enum GlassType {
+  FLOAT
+  TEMPERED
+  LAMINATED
+  INSULATED
+  LOW_E
+  REFLECTIVE
+  TINTED
+  FROSTED
+  PATTERNED
+  BULLETPROOF
+}
+
+enum GlassClass {
+  SINGLE_GLASS
+  IG_CLASS
+  DOUBLE_GLAZED
+  TRIPLE_GLAZED
+  SAFETY_GLASS
+  FIRE_RATED
+  ACOUSTIC
+  SOLAR_CONTROL
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PRODUCTION
+  QUALITY_CHECK
+  READY_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  ON_HOLD
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  phone       String?
+  address     String?
+  country     String
+  city        String?
+  company     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  orders      Order[]
+  
+  @@map("customers")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  customerId      String
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Glass specifications
+  glassType       GlassType
+  glassClass      GlassClass
+  thickness       Float       // in mm
+  width           Float       // in mm
+  height          Float       // in mm
+  quantity        Int
+  
+  // Pricing
+  unitPrice       Float
+  totalPrice      Float
+  currency        String      @default("USD")
+  
+  // Order status
+  status          OrderStatus @default(PENDING)
+  priority        Priority    @default(MEDIUM)
+  
+  // Additional specifications
+  edgeWork        String?
+  coating         String?
+  tempering       Boolean     @default(false)
+  laminated       Boolean     @default(false)
+  
+  // Dates
+  orderDate       DateTime    @default(now())
+  requiredDate    DateTime?
+  completedDate   DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Notes
+  notes           String?
+  internalNotes   String?
+  
+  @@map("orders")
+}
+
+

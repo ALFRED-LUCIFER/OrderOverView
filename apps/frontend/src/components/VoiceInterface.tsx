@@ -1,0 +1,733 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Box, 
+  IconButton, 
+  Paper, 
+  Typography, 
+  Chip,
+  Collapse,
+  Alert,
+  LinearProgress,
+  Snackbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
+} from '@mui/material';
+import MicIcon from '@mui/icons-material/Mic';
+import MicOffIcon from '@mui/icons-material/MicOff';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import { io, Socket } from 'socket.io-client';
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition: new () => SpeechRecognition;
+    SpeechRecognition: new () => SpeechRecognition;
+  }
+}
+
+export const VoiceInterface: React.FC = () => {
+  const [isListening, setIsListening] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [response, setResponse] = useState('');
+  const [status, setStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [useNaturalConversation, setUseNaturalConversation] = useState(true);
+  const [conversationMode, setConversationMode] = useState<'single' | 'conversation'>('single');
+  const [isInConversation, setIsInConversation] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [totalCost, setTotalCost] = useState(0);
+  
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => {
+    // Check if voice is enabled
+    const voiceEnabled = import.meta.env.VITE_ENABLE_VOICE === 'true';
+    if (!voiceEnabled) return;
+
+    // Load speech synthesis voices
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      console.log('🎤 Available voices:', voices.length);
+      if (voices.length > 0) {
+        voices.forEach(voice => {
+          console.log(`Voice: ${voice.name} (${voice.lang})`);
+        });
+      }
+    };
+
+    // Load voices immediately and on voices changed event
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+      
+      // Note: Don't initialize speech here as it requires user interaction
+      console.log('🎤 Speech synthesis available, waiting for user interaction');
+    }
+
+    // Initialize WebSocket connection ONCE
+    socketRef.current = io(import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3001');
+    
+    socketRef.current.on('connected', (data) => {
+      console.log('LISA connected with session:', data.sessionId);
+      setError(null);
+      
+      // Show LISA's welcome message
+      if (data.message) {
+        setResponse(data.message);
+        setStatus('speaking');
+        speakResponse(data.message);
+      }
+    });
+
+    socketRef.current.on('voice-response', (data) => {
+      // Handle different types of responses
+      if (data.fillerWord && data.shouldSpeak) {
+        speakResponse(data.fillerWord, true); // Speak filler word quietly
+        return;
+      }
+      
+      if (data.response && data.shouldSpeak) {
+        setResponse(data.response);
+        setStatus('speaking');
+        speakResponse(data.response);
+      }
+      
+      // Handle different actions with enhanced feedback
+      if (data.action === 'ORDERS_FOUND' || data.action === 'search_results') {
+        console.log('Orders found:', data.data);
+        if (data.data?.orders) {
+          setSearchResults(data.data.orders);
+          setTotalCost(data.data.totalCost || 0);
+          setSearchDialogOpen(true);
+        }
+      } else if (data.action === 'PDF_GENERATED') {
+        console.log('PDF generated:', data.data.url);
+        window.open(data.data.url, '_blank');
+      } else if (data.action === 'CREATE_ORDER' || data.action === 'order_created') {
+        console.log('Order creation:', data.data);
+        if (data.data?.id) {
+          setSnackbarMessage(`✅ Order successfully created with ID: ${data.data.id}`);
+          setSnackbarOpen(true);
+        }
+      } else if (data.action === 'customer_created') {
+        if (data.data?.id) {
+          setSnackbarMessage(`✅ Customer successfully created with ID: ${data.data.id}`);
+          setSnackbarOpen(true);
+        }
+      } else if (data.action === 'end_conversation') {
+        // LISA detected conversation ending
+        endConversation();
+      }
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('WebSocket connection error:', error);
+      setError('Unable to connect to voice service');
+      setStatus('error');
+    });
+
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('WebSocket disconnected:', reason);
+      setError('Connection lost');
+      setStatus('error');
+      
+      // Auto-reconnect after a delay unless it was intentional
+      if (reason !== 'io client disconnect') {
+        setTimeout(() => {
+          if (!socketRef.current?.connected) {
+            console.log('Attempting to reconnect...');
+            socketRef.current?.connect();
+          }
+        }, 3000);
+      }
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('WebSocket reconnected');
+      setError(null);
+      setStatus('idle');
+    });
+
+    // Set up heartbeat to keep connection alive
+    const heartbeat = setInterval(() => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('ping');
+      }
+    }, 30000); // Send ping every 30 seconds
+
+    return () => {
+      console.log('Cleaning up WebSocket connection');
+      clearInterval(heartbeat);
+      socketRef.current?.disconnect();
+    };
+  }, []); // Only run once on mount
+
+  // Separate useEffect for Speech Recognition initialization
+  useEffect(() => {
+    // Initialize Speech Recognition
+    const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+    
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true; // Enable continuous listening
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event) => {
+        const current = event.results[event.results.length - 1];
+        const transcriptText = current[0].transcript;
+        
+        if (current.isFinal) {
+          setTranscript(transcriptText);
+          setInterimTranscript('');
+          sendVoiceCommand(transcriptText, true, false); // Final result
+        } else {
+          setInterimTranscript(transcriptText);
+          // Send interim results for natural conversation in conversation mode
+          if (useNaturalConversation && isInConversation) {
+            sendVoiceCommand(transcriptText, false, true); // Interim result
+          }
+        }
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setError(`Speech recognition error: ${event.error}`);
+        setIsListening(false);
+        setStatus('error');
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+        if (status === 'listening') {
+          setStatus('processing');
+        }
+        
+        // Auto-restart listening in conversation mode
+        if (isInConversation && !error) {
+          setTimeout(() => {
+            if (recognitionRef.current && status !== 'error' && isInConversation) {
+              setIsListening(true);
+              setStatus('listening');
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.warn('Could not restart speech recognition:', e);
+              }
+            }
+          }, 1000); // Brief pause before restarting
+        }
+      };
+    } else {
+      setError('Speech recognition not supported in this browser');
+      setStatus('error');
+    }
+  }, []); // Only run once on mount
+
+  const startListening = () => {
+    if (recognitionRef.current && !isListening) {
+      setIsListening(true);
+      setStatus('listening');
+      setTranscript('');
+      setError(null);
+      setIsExpanded(true);
+      recognitionRef.current.start();
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  const startConversation = () => {
+    // Initialize speech synthesis on user interaction
+    initializeSpeechSynthesis();
+    
+    setIsInConversation(true);
+    setConversationMode('conversation');
+    startListening();
+    if (socketRef.current) {
+      socketRef.current.emit('start-conversation');
+    }
+  };
+
+  const endConversation = () => {
+    setIsInConversation(false);
+    setConversationMode('single');
+    stopListening();
+    setStatus('idle');
+    if (socketRef.current) {
+      socketRef.current.emit('end-conversation');
+    }
+  };
+
+  const sendVoiceCommand = (
+    text: string, 
+    isEndOfSpeech: boolean = true, 
+    interimResults: boolean = false
+  ) => {
+    if (socketRef.current && text.trim()) {
+      setStatus('processing');
+      socketRef.current.emit('voice-command', { 
+        transcript: text,
+        isEndOfSpeech,
+        interimResults,
+        useNaturalConversation
+      });
+    }
+  };
+
+  const initializeSpeechSynthesis = () => {
+    if ('speechSynthesis' in window) {
+      // This function must be called from user interaction
+      console.log('🎤 Initializing speech synthesis...');
+      
+      // Create a silent utterance to initialize the system
+      const initUtterance = new SpeechSynthesisUtterance('');
+      initUtterance.volume = 0;
+      initUtterance.onend = () => {
+        console.log('🎤 Speech synthesis initialized successfully');
+      };
+      initUtterance.onerror = (event) => {
+        console.warn('🎤 Speech synthesis initialization failed:', event.error);
+      };
+      
+      window.speechSynthesis.speak(initUtterance);
+      return true;
+    }
+    return false;
+  };
+
+  const speakResponse = (text: string, isFillerWord: boolean = false) => {
+    if ('speechSynthesis' in window) {
+      try {
+        // Stop any ongoing speech
+        window.speechSynthesis.cancel();
+        
+        // Wait a moment for cancellation to complete, then speak
+        setTimeout(() => {
+          const utterance = new SpeechSynthesisUtterance(text);
+          
+          // Get available voices and select a good one for LISA
+          const voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            // Prefer female English voices for LISA
+            const preferredVoice = voices.find(voice => 
+              voice.lang.startsWith('en') && 
+              (voice.name.toLowerCase().includes('female') || 
+               voice.name.toLowerCase().includes('samantha') ||
+               voice.name.toLowerCase().includes('karen') ||
+               voice.name.toLowerCase().includes('moira'))
+            ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+            
+            utterance.voice = preferredVoice;
+            console.log('🎤 LISA using voice:', preferredVoice.name);
+          }
+          
+          // Configure voice for natural conversation
+          if (useNaturalConversation) {
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            utterance.volume = 0.9;
+          }
+          
+          if (isFillerWord) {
+            utterance.volume = 0.7;
+            utterance.rate = 0.7;
+          }
+    
+          utterance.onstart = () => {
+            console.log('🎤 LISA started speaking:', text);
+            setStatus('speaking');
+            if (socketRef.current) {
+              socketRef.current.emit('voice-status', { status: 'speaking' });
+            }
+          };
+          
+          utterance.onend = () => {
+            console.log('🎤 LISA finished speaking');
+            setStatus('idle');
+            synthRef.current = null;
+            if (socketRef.current) {
+              socketRef.current.emit('voice-status', { status: 'idle' });
+            }
+          };
+          
+          utterance.onerror = (event) => {
+            console.error('🎤 LISA speech error:', event.error);
+            setStatus('idle');
+            synthRef.current = null;
+            if (event.error === 'not-allowed') {
+              setError('Speech blocked - click "Test LISA Voice" first to enable audio');
+            } else {
+              setError(`Speech error: ${event.error}`);
+            }
+          };
+          
+          synthRef.current = utterance;
+          console.log('🎤 LISA attempting to speak:', text);
+          window.speechSynthesis.speak(utterance);
+          
+        }, 100); // Small delay to ensure cancellation completes
+        
+      } catch (error) {
+        console.error('🎤 Speech synthesis error:', error);
+        setStatus('idle');
+        setError('Speech synthesis failed - try clicking "Test LISA Voice" first');
+      }
+    } else {
+      console.error('🎤 Speech synthesis not supported');
+      setStatus('idle');
+      setError('Speech synthesis not supported in this browser');
+    }
+  };
+
+  const handleInterruption = () => {
+    if (synthRef.current) {
+      window.speechSynthesis.cancel();
+      synthRef.current = null;
+      setStatus('idle');
+      
+      // Notify backend of interruption
+      if (socketRef.current) {
+        socketRef.current.emit('voice-interruption');
+      }
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (status) {
+      case 'listening': return 'error';
+      case 'processing': return 'warning';
+      case 'speaking': return 'success';
+      case 'error': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (status) {
+      case 'listening': return 'LISA is listening...';
+      case 'processing': return 'LISA is thinking...';
+      case 'speaking': return 'LISA is speaking...';
+      case 'error': return 'LISA encountered an error';
+      default: return 'LISA - Voice Assistant';
+    }
+  };
+
+  const toggleExpanded = () => {
+    setIsExpanded(!isExpanded);
+  };
+
+  // Don't render if voice is not enabled
+  if (import.meta.env.VITE_ENABLE_VOICE !== 'true') {
+    return null;
+  }
+
+  return (
+    <Paper
+      elevation={3}
+      sx={{
+        position: 'fixed',
+        bottom: 20,
+        right: 20,
+        width: isExpanded ? 380 : 'auto',
+        maxHeight: isExpanded ? 500 : 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 1000,
+        transition: 'all 0.3s ease-in-out',
+      }}
+    >
+      {/* Header Bar */}
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          p: 2,
+          cursor: 'pointer',
+          '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' }
+        }}
+        onClick={toggleExpanded}
+      >
+        <SmartToyIcon sx={{ mr: 1, color: 'primary.main' }} />
+        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+          {getStatusText()}
+        </Typography>
+        <Chip
+          label={status.toUpperCase()}
+          color={getStatusColor()}
+          size="small"
+          sx={{ mr: 1 }}
+        />
+      </Box>
+
+      {/* Expandable Content */}
+      <Collapse in={isExpanded}>
+        <Box sx={{ p: 2, pt: 0 }}>
+          {/* Error Alert */}
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          {/* Microphone Controls */}
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <IconButton
+              size="large"
+              color={isInConversation ? 'warning' : (isListening ? 'error' : 'primary')}
+              onClick={isInConversation ? endConversation : (isListening ? stopListening : startConversation)}
+              onDoubleClick={handleInterruption} // Double-click to interrupt AI speech
+              disabled={status === 'processing' || status === 'error'}
+              sx={{
+                mr: 2,
+                border: '2px solid',
+                borderColor: isInConversation ? 'warning.main' : (isListening ? 'error.main' : 'primary.main'),
+              }}
+            >
+              {isInConversation ? <MicIcon /> : (isListening ? <MicOffIcon /> : <MicIcon />)}
+            </IconButton>
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                {isInConversation 
+                  ? 'Click to end conversation' 
+                  : (isListening ? 'Click to stop' : 'Click to start conversation')}
+              </Typography>
+              {status === 'speaking' && (
+                <Typography variant="caption" color="warning.main">
+                  Double-click mic to interrupt
+                </Typography>
+              )}
+            </Box>
+          </Box>
+
+          {/* Progress Bar for Processing */}
+          {status === 'processing' && (
+            <LinearProgress sx={{ mb: 2 }} />
+          )}
+
+          {/* Transcript Display */}
+          {(transcript || interimTranscript) && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                You said:
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontStyle: 'italic',
+                  backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                  p: 1,
+                  borderRadius: 1,
+                  mt: 0.5
+                }}
+              >
+                "{transcript || interimTranscript}"
+                {interimTranscript && (
+                  <Typography 
+                    component="span" 
+                    sx={{ opacity: 0.6, fontStyle: 'normal' }}
+                  >
+                    {' (speaking...)'}
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
+          )}
+
+          {/* AI Response Display */}
+          {response && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                LISA:
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  backgroundColor: 'rgba(76, 175, 80, 0.08)',
+                  p: 1,
+                  borderRadius: 1,
+                  mt: 0.5,
+                  maxHeight: 150,
+                  overflow: 'auto'
+                }}
+              >
+                {response}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Help Text */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="caption" color="text.secondary" display="block">
+              💬 Chat with LISA - Your natural conversation examples:
+            </Typography>
+            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+              • "Hi LISA, I need to create a new glass order"
+            </Typography>
+            <Typography variant="caption" display="block">
+              • "LISA, can you show me orders from this week?"
+            </Typography>
+            <Typography variant="caption" display="block">
+              • "I'm looking for customer Smith's orders"
+            </Typography>
+            <Typography variant="caption" display="block">
+              • "Generate a PDF report for order 123"
+            </Typography>
+            {isInConversation && (
+              <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic', color: 'warning.main' }}>
+                🎙️ LISA is actively listening in conversation mode - say "stop" or "finish" to end
+              </Typography>
+            )}
+            {useNaturalConversation && !isInConversation && (
+              <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic', color: 'success.main' }}>
+                🎙️ LISA is in natural conversation mode - start a conversation to chat continuously
+              </Typography>
+            )}
+            
+            {/* Settings Toggle */}
+            <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Settings:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip
+                  label={useNaturalConversation ? "Natural Mode" : "Simple Mode"}
+                  size="small"
+                  color={useNaturalConversation ? "success" : "default"}
+                  onClick={() => setUseNaturalConversation(!useNaturalConversation)}
+                  variant="outlined"
+                />
+                <Chip
+                  label={isInConversation ? "In Conversation" : "Ready to Chat"}
+                  size="small"
+                  color={isInConversation ? "warning" : "default"}
+                  onClick={() => isInConversation ? endConversation() : startConversation()}
+                  variant="outlined"
+                />
+                <Chip
+                  label="Test LISA Voice"
+                  size="small"
+                  color="info"
+                  onClick={() => {
+                    initializeSpeechSynthesis();
+                    speakResponse("Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.");
+                  }}
+                  variant="outlined"
+                />
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      </Collapse>
+      
+      {/* Snackbar for Notifications */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={() => setSnackbarOpen(false)}
+        message={snackbarMessage}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      />
+      
+      {/* Search Results Dialog */}
+      <Dialog
+        open={searchDialogOpen}
+        onClose={() => setSearchDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Search Results
+          <Typography variant="subtitle2" color="text.secondary">
+            Found {searchResults.length} orders • Total Cost: ${totalCost.toFixed(2)}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Order ID</TableCell>
+                  <TableCell>Customer</TableCell>
+                  <TableCell>Glass Type</TableCell>
+                  <TableCell>Quantity</TableCell>
+                  <TableCell>Dimensions</TableCell>
+                  <TableCell>Cost</TableCell>
+                  <TableCell>Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {searchResults.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell>{order.id}</TableCell>
+                    <TableCell>{order.customer?.name || order.customerName || 'N/A'}</TableCell>
+                    <TableCell>{order.glassType}</TableCell>
+                    <TableCell>{order.quantity}</TableCell>
+                    <TableCell>
+                      {order.width && order.height 
+                        ? `${order.width}×${order.height}mm` 
+                        : 'N/A'}
+                    </TableCell>
+                    <TableCell>${(order.cost || order.totalPrice || 0).toFixed(2)}</TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={order.status} 
+                        size="small" 
+                        color={order.status === 'completed' ? 'success' : 'default'}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSearchDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  );
+};
+
+export default VoiceInterface;

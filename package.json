@@ -1,0 +1,25 @@
+{
+  "name": "glass-order-management",
+  "version": "1.0.0",
+  "description": "Order Management System for Glass Industry",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "dev:frontend": "cd apps/frontend && pnpm run dev",
+    "dev:backend": "cd apps/backend && pnpm run start:dev",
+    "build": "pnpm -r build",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules pnpm-lock.yaml",
+    "install:all": "pnpm install",
+    "db:generate": "cd apps/backend && pnpm run db:generate",
+    "db:push": "cd apps/backend && pnpm run db:push",
+    "db:studio": "cd apps/backend && pnpm run db:studio"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
