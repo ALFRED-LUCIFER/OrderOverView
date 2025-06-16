@@ -24,7 +24,11 @@ import {
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { io, Socket } from 'socket.io-client';
+import { audioService } from '../services/AudioService';
+import { AudioPermissionManager } from './AudioPermissionManager';
 
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -70,9 +74,13 @@ export const VoiceInterface: React.FC = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   
+  // Audio-related state
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioPermissionOpen, setAudioPermissionOpen] = useState(false);
+  const [audioInitialized, setAudioInitialized] = useState(false);
+
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const socketRef = useRef<Socket | null>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     // Check if voice is enabled
@@ -292,9 +300,12 @@ export const VoiceInterface: React.FC = () => {
     }
   };
 
-  const startConversation = () => {
-    // Initialize speech synthesis on user interaction
-    initializeSpeechSynthesis();
+  const startConversation = async () => {
+    // Initialize audio service on user interaction
+    const audioReady = await initializeAudio();
+    if (!audioReady) {
+      console.warn('Audio initialization failed, continuing without audio');
+    }
     
     setIsInConversation(true);
     setConversationMode('conversation');
@@ -330,121 +341,79 @@ export const VoiceInterface: React.FC = () => {
     }
   };
 
-  const initializeSpeechSynthesis = () => {
-    if ('speechSynthesis' in window) {
-      // This function must be called from user interaction
-      console.log('🎤 Initializing speech synthesis...');
+  const initializeAudio = async () => {
+    try {
+      console.log('🎤 Initializing LISA audio service...');
       
-      // Create a silent utterance to initialize the system
-      const initUtterance = new SpeechSynthesisUtterance('');
-      initUtterance.volume = 0;
-      initUtterance.onend = () => {
-        console.log('🎤 Speech synthesis initialized successfully');
-      };
-      initUtterance.onerror = (event) => {
-        console.warn('🎤 Speech synthesis initialization failed:', event.error);
-      };
+      // Initialize audioService with user interaction
+      await audioService.initialize();
+      setAudioInitialized(true);
+      setAudioEnabled(true);
       
-      window.speechSynthesis.speak(initUtterance);
+      console.log('🎤 LISA audio service initialized successfully');
       return true;
+    } catch (error) {
+      console.error('🎤 Audio initialization failed:', error);
+      setError('Audio initialization failed - please check browser permissions');
+      setAudioPermissionOpen(true);
+      return false;
     }
-    return false;
   };
 
-  const speakResponse = (text: string, isFillerWord: boolean = false) => {
-    if ('speechSynthesis' in window) {
-      try {
-        // Stop any ongoing speech
-        window.speechSynthesis.cancel();
-        
-        // Wait a moment for cancellation to complete, then speak
-        setTimeout(() => {
-          const utterance = new SpeechSynthesisUtterance(text);
-          
-          // Get available voices and select a good one for LISA
-          const voices = window.speechSynthesis.getVoices();
-          if (voices.length > 0) {
-            // Prefer female English voices for LISA
-            const preferredVoice = voices.find(voice => 
-              voice.lang.startsWith('en') && 
-              (voice.name.toLowerCase().includes('female') || 
-               voice.name.toLowerCase().includes('samantha') ||
-               voice.name.toLowerCase().includes('karen') ||
-               voice.name.toLowerCase().includes('moira'))
-            ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-            
-            utterance.voice = preferredVoice;
-            console.log('🎤 LISA using voice:', preferredVoice.name);
-          }
-          
-          // Configure voice for natural conversation
-          if (useNaturalConversation) {
-            utterance.rate = 0.9;
-            utterance.pitch = 1.0;
-            utterance.volume = 0.9;
-          }
-          
-          if (isFillerWord) {
-            utterance.volume = 0.7;
-            utterance.rate = 0.7;
-          }
-    
-          utterance.onstart = () => {
-            console.log('🎤 LISA started speaking:', text);
-            setStatus('speaking');
-            if (socketRef.current) {
-              socketRef.current.emit('voice-status', { status: 'speaking' });
-            }
-          };
-          
-          utterance.onend = () => {
-            console.log('🎤 LISA finished speaking');
-            setStatus('idle');
-            synthRef.current = null;
-            if (socketRef.current) {
-              socketRef.current.emit('voice-status', { status: 'idle' });
-            }
-          };
-          
-          utterance.onerror = (event) => {
-            console.error('🎤 LISA speech error:', event.error);
-            setStatus('idle');
-            synthRef.current = null;
-            if (event.error === 'not-allowed') {
-              setError('Speech blocked - click "Test LISA Voice" first to enable audio');
-            } else {
-              setError(`Speech error: ${event.error}`);
-            }
-          };
-          
-          synthRef.current = utterance;
-          console.log('🎤 LISA attempting to speak:', text);
-          window.speechSynthesis.speak(utterance);
-          
-        }, 100); // Small delay to ensure cancellation completes
-        
-      } catch (error) {
-        console.error('🎤 Speech synthesis error:', error);
-        setStatus('idle');
-        setError('Speech synthesis failed - try clicking "Test LISA Voice" first');
+  const speakResponse = async (text: string, isFillerWord: boolean = false) => {
+    if (!audioEnabled) {
+      console.log('🔇 Audio disabled, skipping speech:', text);
+      return;
+    }
+
+    try {
+      // Configure audio options for LISA's voice
+      const options = {
+        rate: useNaturalConversation ? 0.9 : 1.0,
+        pitch: 1.0,
+        volume: isFillerWord ? 0.7 : 0.9,
+        lang: 'en-US'
+      };
+
+      // Set status to speaking before starting
+      setStatus('speaking');
+      if (socketRef.current) {
+        socketRef.current.emit('voice-status', { status: 'speaking' });
       }
-    } else {
-      console.error('🎤 Speech synthesis not supported');
+
+      // Use audioService to speak
+      await audioService.speak(text, options);
+
+      // Update status when done
       setStatus('idle');
-      setError('Speech synthesis not supported in this browser');
+      if (socketRef.current) {
+        socketRef.current.emit('voice-status', { status: 'idle' });
+      }
+
+    } catch (error) {
+      console.error('🎤 LISA speech error:', error);
+      setStatus('idle');
+      
+      // Handle specific Chrome autoplay errors
+      if (error instanceof Error) {
+        if (error.message.includes('autoplay') || error.message.includes('permission')) {
+          setError('Audio blocked by browser - please enable audio permissions');
+          setAudioPermissionOpen(true);
+        } else {
+          setError(`Speech error: ${error.message}`);
+        }
+      }
     }
   };
 
   const handleInterruption = () => {
-    if (synthRef.current) {
-      window.speechSynthesis.cancel();
-      synthRef.current = null;
-      setStatus('idle');
-      
-      // Notify backend of interruption
-      if (socketRef.current) {
-        socketRef.current.emit('voice-interruption');
-      }
+    // Use audioService to stop speech
+    audioService.stopSpeaking();
+    setStatus('idle');
+    
+    // Notify backend of interruption
+    if (socketRef.current) {
+      socketRef.current.emit('voice-interruption');
     }
   };
 
@@ -541,6 +510,18 @@ export const VoiceInterface: React.FC = () => {
             >
               {isInConversation ? <MicIcon /> : (isListening ? <MicOffIcon /> : <MicIcon />)}
             </IconButton>
+            
+            {/* Audio Control Button */}
+            <IconButton
+              size="medium"
+              color={audioEnabled ? 'success' : 'default'}
+              onClick={() => setAudioPermissionOpen(true)}
+              sx={{ mr: 1 }}
+              title={audioEnabled ? 'Audio enabled - click to adjust settings' : 'Audio disabled - click to enable'}
+            >
+              {audioEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+            </IconButton>
+            
             <Box>
               <Typography variant="body2" color="text.secondary">
                 {isInConversation 
@@ -550,6 +531,11 @@ export const VoiceInterface: React.FC = () => {
               {status === 'speaking' && (
                 <Typography variant="caption" color="warning.main">
                   Double-click mic to interrupt
+                </Typography>
+              )}
+              {!audioEnabled && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Audio disabled - click speaker icon to enable
                 </Typography>
               )}
             </Box>
@@ -663,9 +649,11 @@ export const VoiceInterface: React.FC = () => {
                   label="Test LISA Voice"
                   size="small"
                   color="info"
-                  onClick={() => {
-                    initializeSpeechSynthesis();
-                    speakResponse("Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.");
+                  onClick={async () => {
+                    const audioReady = await initializeAudio();
+                    if (audioReady) {
+                      speakResponse("Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.");
+                    }
                   }}
                   variant="outlined"
                 />
@@ -741,6 +729,16 @@ export const VoiceInterface: React.FC = () => {
           <Button onClick={() => setSearchDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Audio Permission Manager */}
+      <AudioPermissionManager 
+        open={audioPermissionOpen}
+        onClose={() => setAudioPermissionOpen(false)}
+        onPermissionGranted={() => {
+          setAudioEnabled(true);
+          setAudioInitialized(true);
+        }}
+      />
     </Paper>
   );
 };
