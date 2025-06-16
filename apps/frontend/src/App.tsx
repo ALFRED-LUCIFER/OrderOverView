@@ -27,6 +27,7 @@ import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
 import VoiceInterface from './components/VoiceInterface';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const drawerWidth = 280;
 
@@ -191,11 +192,13 @@ function App() {
         }}
       >
         <Toolbar />
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+          </Routes>
+        </ErrorBoundary>
       </Box>
 
       {/* Voice Interface - Fixed position overlay */}

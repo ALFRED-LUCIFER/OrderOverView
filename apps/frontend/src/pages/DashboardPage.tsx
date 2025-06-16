@@ -34,6 +34,10 @@ const DashboardPage = () => {
   const { data: customers, isLoading: customersLoading, error: customersError } = useCustomers();
   const { data: orders, isLoading: ordersLoading, error: ordersError } = useOrders();
 
+  // Ensure data is always an array to prevent reduce errors
+  const customersData: Customer[] = Array.isArray(customers) ? customers : [];
+  const ordersData: Order[] = Array.isArray(orders) ? orders : [];
+
   // Loading state
   if (customersLoading || ordersLoading) {
     return (
@@ -59,9 +63,9 @@ const DashboardPage = () => {
     );
   }
 
-  // Default to empty arrays if data is not available
-  const customersData: Customer[] = customers || [];
-  const ordersData: Order[] = orders || [];
+  // Ensure data is always an array to prevent reduce errors
+  const customersData: Customer[] = Array.isArray(customers) ? customers : [];
+  const ordersData: Order[] = Array.isArray(orders) ? orders : [];
 
   // Calculate metrics
   const totalRevenue = ordersData.reduce((sum, order) => sum + order.totalPrice, 0);

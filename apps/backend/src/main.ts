@@ -14,7 +14,7 @@ async function bootstrap() {
       'http://localhost:3000',
       'https://localhost:3000',
       // Vercel domains
-      'https://your-frontend-domain.vercel.app',
+      'https://order-over-view-frontend.vercel.app',
       /https:\/\/.*\.vercel\.app$/,
       // Render domains
       'https://your-frontend-url.onrender.com',
