@@ -11,8 +11,13 @@ async function bootstrap() {
             'http://localhost:5173',
             'https://localhost:5173',
             'http://localhost:3000',
-            'https://localhost:3000'
-        ],
+            'https://localhost:3000',
+            'https://your-frontend-domain.vercel.app',
+            /https:\/\/.*\.vercel\.app$/,
+            'https://your-frontend-url.onrender.com',
+            /https:\/\/.*\.onrender\.com$/,
+            process.env.CLIENT_URL
+        ].filter(Boolean),
         methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
         credentials: true,
     });
@@ -22,20 +27,41 @@ async function bootstrap() {
         transform: true,
     }));
     app.setGlobalPrefix('api');
-    const config = new swagger_1.DocumentBuilder()
-        .setTitle('Glass Order Management API')
-        .setDescription('API for managing glass orders and customers')
-        .setVersion('1.0')
-        .addTag('customers')
-        .addTag('orders')
-        .build();
-    const document = swagger_1.SwaggerModule.createDocument(app, config);
-    swagger_1.SwaggerModule.setup('api/docs', app, document);
+    if (process.env.NODE_ENV !== 'production') {
+        const config = new swagger_1.DocumentBuilder()
+            .setTitle('Glass Order Management API')
+            .setDescription('API for managing glass orders and customers')
+            .setVersion('1.0')
+            .addTag('customers')
+            .addTag('orders')
+            .addTag('voice')
+            .build();
+        const document = swagger_1.SwaggerModule.createDocument(app, config);
+        swagger_1.SwaggerModule.setup('api/docs', app, document);
+    }
     const port = process.env.PORT || 3001;
-    await app.listen(port);
-    console.log(`🚀 Application is running on: http://localhost:${port}`);
-    console.log(`📚 Swagger docs available at: http://localhost:${port}/api/docs`);
-    console.log(`📡 WebSocket available at: ws://localhost:${port}`);
+    if (process.env.VERCEL) {
+        await app.init();
+    }
+    else {
+        await app.listen(port);
+        const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+        console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`📚 Swagger docs available at: ${protocol}://localhost:${port}/api/docs`);
+        }
+        console.log(`📡 WebSocket available at: ${protocol === 'https' ? 'wss' : 'ws'}://localhost:${port}`);
+    }
+    return app;
 }
-bootstrap();
+let app;
+exports.default = async (req, res) => {
+    if (!app) {
+        app = await bootstrap();
+    }
+    return app.getHttpAdapter().getInstance()(req, res);
+};
+if (!process.env.VERCEL) {
+    bootstrap();
+}
 //# sourceMappingURL=main.js.map

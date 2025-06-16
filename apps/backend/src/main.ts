@@ -6,14 +6,22 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for frontend
+  // Enable CORS for frontend - updated for production
   app.enableCors({
     origin: [
       'http://localhost:5173', 
       'https://localhost:5173', 
       'http://localhost:3000',
-      'https://localhost:3000'
-    ],
+      'https://localhost:3000',
+      // Vercel domains
+      'https://your-frontend-domain.vercel.app',
+      /https:\/\/.*\.vercel\.app$/,
+      // Render domains
+      'https://your-frontend-url.onrender.com',
+      /https:\/\/.*\.onrender\.com$/,
+      // Environment variable for dynamic CLIENT_URL
+      process.env.CLIENT_URL
+    ].filter(Boolean), // Remove undefined values
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -28,24 +36,49 @@ async function bootstrap() {
   // API prefix
   app.setGlobalPrefix('api');
 
-  // Swagger documentation
-  const config = new DocumentBuilder()
-    .setTitle('Glass Order Management API')
-    .setDescription('API for managing glass orders and customers')
-    .setVersion('1.0')
-    .addTag('customers')
-    .addTag('orders')
-    .build();
-  
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Swagger documentation (disable in production for security)
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Glass Order Management API')
+      .setDescription('API for managing glass orders and customers')
+      .setVersion('1.0')
+      .addTag('customers')
+      .addTag('orders')
+      .addTag('voice')
+      .build();
+    
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 3001;
-  await app.listen(port);
   
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
-  console.log(`📚 Swagger docs available at: http://localhost:${port}/api/docs`);
-  console.log(`📡 WebSocket available at: ws://localhost:${port}`);
+  // For Vercel, don't call listen in production
+  if (process.env.VERCEL) {
+    await app.init();
+  } else {
+    await app.listen(port);
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    console.log(`🚀 Application is running on: ${protocol}://localhost:${port}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`📚 Swagger docs available at: ${protocol}://localhost:${port}/api/docs`);
+    }
+    console.log(`📡 WebSocket available at: ${protocol === 'https' ? 'wss' : 'ws'}://localhost:${port}`);
+  }
+
+  return app;
 }
 
-bootstrap();
+// Export for Vercel
+let app: any;
+export default async (req: any, res: any) => {
+  if (!app) {
+    app = await bootstrap();
+  }
+  return app.getHttpAdapter().getInstance()(req, res);
+};
+
+// For local development and Render
+if (!process.env.VERCEL) {
+  bootstrap();
+}
