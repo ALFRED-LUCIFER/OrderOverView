@@ -343,10 +343,14 @@ export const VoiceInterface: React.FC = () => {
 
   const initializeAudio = async () => {
     try {
-      console.log('🎤 Initializing LISA audio service...');
+      console.log('🎤 Initializing LISA audio service with user interaction...');
       
       // Initialize audioService with user interaction
       await audioService.initialize();
+      
+      // Test with a silent utterance to ensure Chrome allows audio
+      await audioService.speak('', { volume: 0 });
+      
       setAudioInitialized(true);
       setAudioEnabled(true);
       
@@ -354,7 +358,18 @@ export const VoiceInterface: React.FC = () => {
       return true;
     } catch (error) {
       console.error('🎤 Audio initialization failed:', error);
-      setError('Audio initialization failed - please check browser permissions');
+      
+      // Show user-friendly error based on the issue
+      if (error instanceof Error) {
+        if (error.message.includes('autoplay') || error.message.includes('not-allowed')) {
+          setError('Audio blocked by Chrome - click the "Enable Audio" button first');
+        } else if (error.message.includes('interaction')) {
+          setError('User interaction required - click any button to enable audio');
+        } else {
+          setError(`Audio setup failed: ${error.message}`);
+        }
+      }
+      
       setAudioPermissionOpen(true);
       return false;
     }
@@ -487,6 +502,32 @@ export const VoiceInterface: React.FC = () => {
       {/* Expandable Content */}
       <Collapse in={isExpanded}>
         <Box sx={{ p: 2, pt: 0 }}>
+          {/* Audio Initialization Alert for Chrome */}
+          {!audioInitialized && (
+            <Alert 
+              severity="info" 
+              sx={{ mb: 2 }}
+              action={
+                <Button 
+                  color="primary" 
+                  size="small" 
+                  onClick={async () => {
+                    const success = await initializeAudio();
+                    if (success) {
+                      setSnackbarMessage('🎤 Audio enabled! You can now use voice commands.');
+                      setSnackbarOpen(true);
+                    }
+                  }}
+                  variant="contained"
+                >
+                  Enable Audio
+                </Button>
+              }
+            >
+              Click "Enable Audio" to activate LISA's voice responses in Chrome
+            </Alert>
+          )}
+
           {/* Error Alert */}
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>

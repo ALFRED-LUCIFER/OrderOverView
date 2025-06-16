@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome LISA Audio Debug</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 10px;
+            font-weight: bold;
+            text-align: center;
+            backdrop-filter: blur(5px);
+        }
+        .success { background: rgba(76, 175, 80, 0.8); }
+        .error { background: rgba(244, 67, 54, 0.8); }
+        .warning { background: rgba(255, 193, 7, 0.8); color: #000; }
+        .info { background: rgba(33, 150, 243, 0.8); }
+        
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .primary { background: rgba(103, 58, 183, 0.8); border-color: rgba(103, 58, 183, 1); }
+        .success-btn { background: rgba(76, 175, 80, 0.8); border-color: rgba(76, 175, 80, 1); }
+        .danger { background: rgba(244, 67, 54, 0.8); border-color: rgba(244, 67, 54, 1); }
+        
+        .debug-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            word-break: break-all;
+        }
+        
+        h1 { text-align: center; margin-bottom: 30px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        h2 { color: rgba(255, 255, 255, 0.9); border-bottom: 2px solid rgba(255, 255, 255, 0.2); padding-bottom: 10px; }
+        
+        .step {
+            background: rgba(255, 255, 255, 0.1);
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid rgba(103, 58, 183, 1);
+        }
+        
+        .live-test {
+            background: linear-gradient(45deg, rgba(103, 58, 183, 0.2), rgba(63, 81, 181, 0.2));
+            border: 2px solid rgba(103, 58, 183, 0.5);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Chrome LISA Audio Debug Center</h1>
+        
+        <div class="live-test">
+            <h2>🔥 Live Frontend Test</h2>
+            <p>Test the actual LISA frontend running on localhost:</p>
+            <button onclick="window.open('http://localhost:5173', '_blank')" class="primary">
+                Open LISA Frontend
+            </button>
+            <button onclick="testFrontendWebSocket()" class="success-btn">
+                Test WebSocket
+            </button>
+        </div>
+        
+        <div class="debug-section">
+            <h2>🔍 Browser Environment</h2>
+            <div id="browser-status" class="status info">
+                Checking browser environment...
+            </div>
+            <div id="browser-details" class="code"></div>
+        </div>
+        
+        <div class="debug-section">
+            <h2>🎯 Chrome Audio Test Sequence</h2>
+            <div id="test-status" class="status warning">
+                Ready to test - click "Start Audio Test"
+            </div>
+            <div style="text-align: center;">
+                <button id="start-test" onclick="runCompleteTest()" class="primary">
+                    Start Audio Test
+                </button>
+                <button id="force-enable" onclick="forceEnableAudio()" class="success-btn" disabled>
+                    Force Enable Audio
+                </button>
+                <button id="test-lisa" onclick="testLISAVoice()" class="primary" disabled>
+                    Test LISA Voice
+                </button>
+            </div>
+        </div>
+        
+        <div class="debug-section">
+            <h2>📊 Real-time Debug Info</h2>
+            <div id="debug-info" class="code">
+                Debug information will appear here...
+            </div>
+        </div>
+        
+        <div class="debug-section">
+            <h2>🛠️ Chrome Troubleshooting</h2>
+            <div class="step">
+                <strong>Issue:</strong> Chrome blocks autoplay audio<br>
+                <strong>Solution:</strong> User must interact with page before audio can play
+            </div>
+            <div class="step">
+                <strong>Issue:</strong> "NotAllowedError" in console<br>
+                <strong>Solution:</strong> Click the sound icon in Chrome's address bar and allow sound
+            </div>
+            <div class="step">
+                <strong>Issue:</strong> Audio works but LISA doesn't speak<br>
+                <strong>Solution:</strong> Check if TTS voices are loaded: <code>speechSynthesis.getVoices()</code>
+            </div>
+            <div class="step">
+                <strong>Issue:</strong> Audio permission popup<br>
+                <strong>Solution:</strong> Allow microphone access for speech recognition
+            </div>
+        </div>
+        
+        <div class="debug-section">
+            <h2>🔗 Quick Links</h2>
+            <button onclick="window.open('chrome://settings/content/sound', '_blank')" class="primary">
+                Chrome Sound Settings
+            </button>
+            <button onclick="window.open('chrome://settings/content/microphone', '_blank')" class="primary">
+                Microphone Settings
+            </button>
+            <button onclick="copyDebugInfo()" class="success-btn">
+                Copy Debug Info
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let audioContext = null;
+        let testResults = {
+            browserCheck: false,
+            audioContext: false,
+            speechSynthesis: false,
+            voicesLoaded: false,
+            audioPlayback: false,
+            lisaVoice: false
+        };
+
+        // Initialize
+        window.addEventListener('load', () => {
+            checkBrowserEnvironment();
+            setInterval(updateDebugInfo, 2000); // Update every 2 seconds
+        });
+
+        function checkBrowserEnvironment() {
+            const info = {
+                userAgent: navigator.userAgent,
+                isChrome: navigator.userAgent.includes('Chrome'),
+                isHTTPS: location.protocol === 'https:',
+                isLocalhost: location.hostname === 'localhost',
+                speechSynthesis: 'speechSynthesis' in window,
+                audioContext: 'AudioContext' in window || 'webkitAudioContext' in window,
+                mediaDevices: 'mediaDevices' in navigator,
+                protocol: location.protocol,
+                hostname: location.hostname,
+                port: location.port || 'default'
+            };
+
+            document.getElementById('browser-details').innerHTML = Object.entries(info)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('<br>');
+
+            const compatible = info.speechSynthesis && info.audioContext;
+            updateStatus('browser-status', compatible ? 'success' : 'error', 
+                compatible ? '✅ Browser fully compatible' : '❌ Browser missing features');
+                
+            testResults.browserCheck = compatible;
+            return compatible;
+        }
+
+        async function runCompleteTest() {
+            updateStatus('test-status', 'info', '🔄 Running complete audio test...');
+            document.getElementById('start-test').disabled = true;
+
+            try {
+                // Test 1: AudioContext
+                await testAudioContext();
+                await sleep(500);
+
+                // Test 2: Speech Synthesis
+                await testSpeechSynthesis();
+                await sleep(500);
+
+                // Test 3: Voice Loading
+                await testVoiceLoading();
+                await sleep(500);
+
+                // Test 4: Audio Playback
+                await testAudioPlayback();
+
+                // Enable next steps
+                document.getElementById('force-enable').disabled = false;
+                document.getElementById('test-lisa').disabled = false;
+
+                const passedTests = Object.values(testResults).filter(Boolean).length;
+                updateStatus('test-status', 'success', 
+                    `✅ Audio test complete: ${passedTests}/6 tests passed`);
+
+            } catch (error) {
+                updateStatus('test-status', 'error', `❌ Test failed: ${error.message}`);
+            }
+
+            document.getElementById('start-test').disabled = false;
+        }
+
+        async function testAudioContext() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioCtx();
+                
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+
+                testResults.audioContext = audioContext.state === 'running';
+                console.log('✅ AudioContext test:', audioContext.state);
+            } catch (error) {
+                testResults.audioContext = false;
+                throw new Error(`AudioContext failed: ${error.message}`);
+            }
+        }
+
+        async function testSpeechSynthesis() {
+            if (!('speechSynthesis' in window)) {
+                throw new Error('SpeechSynthesis not available');
+            }
+
+            testResults.speechSynthesis = true;
+            console.log('✅ SpeechSynthesis available');
+        }
+
+        async function testVoiceLoading() {
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    testResults.voicesLoaded = speechSynthesis.getVoices().length > 0;
+                    resolve();
+                }, 2000);
+
+                const checkVoices = () => {
+                    const voices = speechSynthesis.getVoices();
+                    if (voices.length > 0) {
+                        clearTimeout(timeout);
+                        testResults.voicesLoaded = true;
+                        console.log(`✅ Voices loaded: ${voices.length}`);
+                        resolve();
+                    }
+                };
+
+                speechSynthesis.addEventListener('voiceschanged', checkVoices);
+                checkVoices(); // Check immediately
+            });
+        }
+
+        async function testAudioPlayback() {
+            return new Promise((resolve, reject) => {
+                const utterance = new SpeechSynthesisUtterance('Test');
+                utterance.volume = 0.1;
+                utterance.rate = 2;
+
+                utterance.onend = () => {
+                    testResults.audioPlayback = true;
+                    console.log('✅ Audio playback test passed');
+                    resolve();
+                };
+
+                utterance.onerror = (event) => {
+                    testResults.audioPlayback = false;
+                    console.log('⚠️ Audio playback test failed:', event.error);
+                    resolve(); // Don't fail the whole test
+                };
+
+                setTimeout(() => {
+                    speechSynthesis.cancel();
+                    resolve();
+                }, 3000);
+
+                try {
+                    speechSynthesis.speak(utterance);
+                } catch (error) {
+                    console.log('⚠️ Audio playback exception:', error);
+                    resolve();
+                }
+            });
+        }
+
+        async function forceEnableAudio() {
+            updateStatus('test-status', 'info', '🔄 Force enabling audio...');
+
+            try {
+                // Create and resume audio context with user interaction
+                if (!audioContext) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    audioContext = new AudioCtx();
+                }
+
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+
+                // Force load voices
+                speechSynthesis.getVoices();
+
+                // Play a test sound
+                const testUtterance = new SpeechSynthesisUtterance('Audio enabled');
+                testUtterance.volume = 0.5;
+                speechSynthesis.speak(testUtterance);
+
+                updateStatus('test-status', 'success', '✅ Audio force-enabled successfully');
+                document.getElementById('test-lisa').disabled = false;
+
+            } catch (error) {
+                updateStatus('test-status', 'error', `❌ Force enable failed: ${error.message}`);
+            }
+        }
+
+        async function testLISAVoice() {
+            updateStatus('test-status', 'info', '🤖 Testing LISA voice...');
+
+            try {
+                const lisaMessages = [
+                    'Hello! I am LISA, your Language Intelligence Support Assistant.',
+                    'I can help you manage your glass manufacturing orders.',
+                    'Your Chrome browser audio is now working perfectly!'
+                ];
+
+                for (let i = 0; i < lisaMessages.length; i++) {
+                    await speakLISA(lisaMessages[i]);
+                    await sleep(1000);
+                }
+
+                testResults.lisaVoice = true;
+                updateStatus('test-status', 'success', '🎉 LISA voice test completed successfully!');
+
+            } catch (error) {
+                updateStatus('test-status', 'error', `❌ LISA voice test failed: ${error.message}`);
+            }
+        }
+
+        function speakLISA(text) {
+            return new Promise((resolve, reject) => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                // Configure LISA voice
+                const voices = speechSynthesis.getVoices();
+                const femaleVoice = voices.find(voice => 
+                    voice.lang.startsWith('en') && 
+                    voice.name.toLowerCase().includes('female')
+                ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+
+                if (femaleVoice) {
+                    utterance.voice = femaleVoice;
+                }
+
+                utterance.rate = 0.85;
+                utterance.pitch = 1.1;
+                utterance.volume = 0.8;
+
+                utterance.onend = () => resolve();
+                utterance.onerror = (event) => reject(new Error(event.error));
+
+                speechSynthesis.speak(utterance);
+            });
+        }
+
+        async function testFrontendWebSocket() {
+            updateStatus('test-status', 'info', '🔄 Testing frontend WebSocket...');
+
+            try {
+                const response = await fetch('http://localhost:3001/api/customers');
+                if (response.ok) {
+                    updateStatus('test-status', 'success', '✅ Backend API connection working');
+                } else {
+                    updateStatus('test-status', 'error', '❌ Backend API not responding');
+                }
+            } catch (error) {
+                updateStatus('test-status', 'error', `❌ Backend connection failed: ${error.message}`);
+            }
+        }
+
+        function updateDebugInfo() {
+            const info = {
+                timestamp: new Date().toLocaleTimeString(),
+                audioContextState: audioContext?.state || 'not created',
+                speechSynthesisAvailable: 'speechSynthesis' in window,
+                voicesCount: speechSynthesis?.getVoices()?.length || 0,
+                testsPassed: Object.values(testResults).filter(Boolean).length,
+                currentStatus: document.getElementById('test-status').textContent
+            };
+
+            document.getElementById('debug-info').innerHTML = 
+                Object.entries(info).map(([key, value]) => `${key}: ${value}`).join('<br>');
+        }
+
+        function copyDebugInfo() {
+            const debugText = document.getElementById('debug-info').textContent;
+            const browserDetails = document.getElementById('browser-details').textContent;
+            const fullInfo = `LISA Chrome Audio Debug Report\n\nBrowser Details:\n${browserDetails}\n\nDebug Info:\n${debugText}\n\nTest Results:\n${JSON.stringify(testResults, null, 2)}`;
+            
+            navigator.clipboard.writeText(fullInfo).then(() => {
+                alert('Debug info copied to clipboard!');
+            });
+        }
+
+        function updateStatus(elementId, type, message) {
+            const element = document.getElementById(elementId);
+            element.className = `status ${type}`;
+            element.textContent = message;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>

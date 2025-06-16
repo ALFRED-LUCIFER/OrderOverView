@@ -26,6 +26,7 @@ import {
 import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
+import VoiceTestPage from './pages/VoiceTestPage';
 import VoiceInterface from './components/VoiceInterface';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -35,6 +36,7 @@ const menuItems = [
   { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
   { path: '/customers', label: 'Customers', icon: <PeopleIcon /> },
   { path: '/orders', label: 'Orders', icon: <AssignmentIcon /> },
+  { path: '/voice-test', label: 'Voice Test', icon: <AnalyticsIcon /> },
 ];
 
 function App() {
@@ -197,6 +199,7 @@ function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/voice-test" element={<VoiceTestPage />} />
           </Routes>
         </ErrorBoundary>
       </Box>

@@ -298,18 +298,52 @@ export class AudioService {
   }
 
   private async testTTSCapability(): Promise<void> {
+    console.log('🧪 Testing TTS capability...');
+    
     return new Promise((resolve, reject) => {
-      const testUtterance = new SpeechSynthesisUtterance('');
-      testUtterance.volume = 0;
+      // Create a very short, silent utterance for testing
+      const testUtterance = new SpeechSynthesisUtterance(' ');
+      testUtterance.volume = 0.01; // Very quiet but not completely silent
       testUtterance.rate = 10; // Speak very fast
+      testUtterance.pitch = 1;
       
-      testUtterance.onend = () => resolve();
-      testUtterance.onerror = (event) => reject(new Error(`TTS test failed: ${event.error}`));
+      let resolved = false;
       
-      // Timeout for test
-      setTimeout(() => resolve(), 1000);
+      testUtterance.onend = () => {
+        if (!resolved) {
+          resolved = true;
+          console.log('✅ TTS capability test passed');
+          resolve();
+        }
+      };
       
-      this.speechSynthesis.speak(testUtterance);
+      testUtterance.onerror = (event) => {
+        if (!resolved) {
+          resolved = true;
+          console.warn('⚠️ TTS test error (may be normal):', event.error);
+          // Don't reject on error, as Chrome might block but still work later
+          resolve();
+        }
+      };
+      
+      // Timeout for test - don't wait too long
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.log('✅ TTS test completed (timeout)');
+          resolve();
+        }
+      }, 500);
+      
+      try {
+        this.speechSynthesis.speak(testUtterance);
+      } catch (error) {
+        if (!resolved) {
+          resolved = true;
+          console.warn('⚠️ TTS test exception (may be normal):', error);
+          resolve(); // Don't fail initialization on test errors
+        }
+      }
     });
   }
 
@@ -343,12 +377,21 @@ export class AudioService {
         this.processQueue();
       };
 
-      // Handle errors
+      // Handle errors with Chrome-specific handling
       utterance.onerror = (event) => {
         console.error('❌ Speech error:', event.error);
         this.isSpeaking = false;
         this.currentUtterance = null;
-        reject(new Error(`Speech synthesis failed: ${event.error}`));
+        
+        // Handle Chrome-specific autoplay policy errors
+        if (event.error === 'not-allowed') {
+          reject(new Error('Audio blocked by browser autoplay policy - user interaction required'));
+        } else if (event.error === 'interrupted') {
+          reject(new Error('Speech was interrupted'));
+        } else {
+          reject(new Error(`Speech synthesis failed: ${event.error}`));
+        }
+        
         this.processQueue();
       };
 

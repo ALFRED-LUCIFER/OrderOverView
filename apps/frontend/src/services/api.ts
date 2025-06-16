@@ -17,13 +17,31 @@ const api = axios.create({
   },
 });
 
+// Add request interceptor to log requests
+api.interceptors.request.use(
+  (config) => {
+    console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
 // Add response interceptor to handle errors gracefully
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     console.error('API Error:', error);
-    // Return empty arrays for failed requests to prevent reduce errors
-    if (error.response?.status >= 500 || error.code === 'NETWORK_ERROR') {
+    
+    // Handle all connection errors more gracefully 
+    if (error.response?.status >= 500 || 
+        error.code === 'NETWORK_ERROR' || 
+        error.code === 'ECONNREFUSED' ||
+        error.message?.includes('Network Error') ||
+        error.message?.includes('connect ECONNREFUSED')) {
+      console.log('🔧 API connection failed, returning empty data to prevent app crash');
       return Promise.resolve({ data: [] });
     }
     return Promise.reject(error);
