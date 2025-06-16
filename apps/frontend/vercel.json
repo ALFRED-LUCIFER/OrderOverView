@@ -20,8 +20,8 @@
     }
   ],
   "env": {
-    "VITE_API_URL": "https://your-backend-url.vercel.app",
-    "VITE_WEBSOCKET_URL": "wss://your-backend-url.vercel.app",
+    "VITE_API_URL": "https://orderoverview-dkro.onrender.com",
+    "VITE_WEBSOCKET_URL": "wss://orderoverview-dkro.onrender.com",
     "VITE_ENABLE_VOICE": "true"
   },
   "buildCommand": "pnpm run build",
