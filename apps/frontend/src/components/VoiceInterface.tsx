@@ -587,7 +587,9 @@ export const VoiceInterface: React.FC = () => {
                 fontWeight: 'bold'
               }}
             />
-          </Box>          {/* Main Content */}
+          </Box>
+          
+          {/* Main Content */}
           <Box sx={{ p: 3, backgroundColor: 'rgba(255,255,255,0.05)' }}>
             {/* Error Alert */}
             {error && (
@@ -603,13 +605,6 @@ export const VoiceInterface: React.FC = () => {
                 {error}
               </Alert>
             )}
-
-          {/* Error Alert */}
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
 
           {/* Microphone Controls */}
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -786,11 +781,11 @@ export const VoiceInterface: React.FC = () => {
                   }}
                   variant="outlined"
                 />
-              </Box>
+              </Box>              </Box>
             </Box>
           </Box>
-        </Box>
-      </Collapse>
+        </Paper>
+      )}
       
       {/* Snackbar for Notifications */}
       <Snackbar
@@ -868,7 +863,7 @@ export const VoiceInterface: React.FC = () => {
           setAudioInitialized(true);
         }}
       />
-    </Paper>
+    </Box>
   );
 };
 
