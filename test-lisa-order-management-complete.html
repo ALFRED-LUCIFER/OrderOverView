@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISA Order Management Complete Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .primary { background: #2196F3; color: white; }
+        .primary:hover { background: #1976D2; }
+        .success { background: #4CAF50; color: white; }
+        .success:hover { background: #388E3C; }
+        .warning { background: #FF9800; color: white; }
+        .warning:hover { background: #F57C00; }
+        .error { background: #f44336; color: white; }
+        .error:hover { background: #d32f2f; }
+        
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected { background: rgba(76, 175, 80, 0.3); border-left: 4px solid #4CAF50; }
+        .status.disconnected { background: rgba(244, 67, 54, 0.3); border-left: 4px solid #f44336; }
+        .status.testing { background: rgba(255, 152, 0, 0.3); border-left: 4px solid #FF9800; }
+        
+        .log-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .command-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .command-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #4CAF50;
+            transform: translateY(-2px);
+        }
+        
+        .command-category {
+            font-weight: bold;
+            color: #FFD700;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .results-summary {
+            background: rgba(76, 175, 80, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            border: 2px solid #4CAF50;
+        }
+        
+        .error-indicator {
+            background: rgba(244, 67, 54, 0.3);
+            border-left: 4px solid #f44336;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        
+        .success-indicator {
+            background: rgba(76, 175, 80, 0.3);
+            border-left: 4px solid #4CAF50;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        
+        code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .notification-demo {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4CAF50;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-100%); }
+            to { transform: translateX(-50%) translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 LISA Order Management Complete Test</h1>
+        <p>Testing LISA's ability to create orders, update orders, and show success snackbars</p>
+        
+        <div class="notification-demo" id="notificationDemo">
+            ✅ Demo notification: Order created successfully!
+        </div>
+        
+        <!-- Connection Status -->
+        <div id="connectionStatus" class="status disconnected">
+            ❌ Not connected to LISA
+        </div>
+        
+        <!-- Controls -->
+        <div class="controls">
+            <button class="primary" onclick="connectToLISA()">🔌 Connect to LISA</button>
+            <button class="warning" onclick="disconnectFromLISA()">⏹️ Disconnect</button>
+            <button class="success" onclick="testFullOrderWorkflow()" id="testWorkflowBtn" disabled>
+                🚀 Test Full Order Workflow
+            </button>
+            <button class="success" onclick="showDemoNotification()">📱 Demo Snackbar</button>
+            <button class="error" onclick="clearResults()">🗑️ Clear Results</button>
+        </div>
+        
+        <!-- Test Categories -->
+        <div class="command-grid">
+            <div class="test-section">
+                <div class="command-category">📝 Order Creation Tests</div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Create a new order for 5 tempered glass panels">
+                    <code>"Create a new order for 5 tempered glass panels"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Create an order for John Smith with 10 bulletproof glass units">
+                    <code>"Create an order for John Smith with 10 bulletproof glass units"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="I need a new order for laminated glass, quantity 15">
+                    <code>"I need a new order for laminated glass, quantity 15"</code>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <div class="command-category">🔄 Order Update Tests</div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Update order ORD-001 status to confirmed">
+                    <code>"Update order ORD-001 status to confirmed"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Change the status of order EXP-9001 to delivered">
+                    <code>"Change the status of order EXP-9001 to delivered"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Mark order PROC-9006 as in production">
+                    <code>"Mark order PROC-9006 as in production"</code>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <div class="command-category">🔍 Order Search Tests</div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Show me all orders">
+                    <code>"Show me all orders"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Find orders above $20,000">
+                    <code>"Find orders above $20,000"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="List delivered orders">
+                    <code>"List delivered orders"</code>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <div class="command-category">💬 Conversation Tests</div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Hello LISA, how are you today?">
+                    <code>"Hello LISA, how are you today?"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Thank you LISA, that's all for now">
+                    <code>"Thank you LISA, that's all for now"</code>
+                </div>
+                <div class="command-item" onclick="testCommand(this)" data-command="Stop conversation">
+                    <code>"Stop conversation"</code>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Summary -->
+        <div id="resultsSummary" class="results-summary" style="display: none;">
+            <h3>📊 Test Results Summary</h3>
+            <div id="summaryContent"></div>
+        </div>
+        
+        <!-- Live Log -->
+        <div class="test-section">
+            <h3>📋 Live Test Log</h3>
+            <div id="logContainer" class="log-container"></div>
+        </div>
+        
+        <!-- Expected Features -->
+        <div class="test-section">
+            <h3>✅ Expected LISA Features</h3>
+            <div class="success-indicator">
+                <strong>Order Creation:</strong> LISA should create orders via voice and show success snackbar with order ID
+            </div>
+            <div class="success-indicator">
+                <strong>Order Updates:</strong> LISA should update order status and show confirmation snackbar
+            </div>
+            <div class="success-indicator">
+                <strong>Search Results:</strong> LISA should search orders and display results in dialog
+            </div>
+            <div class="success-indicator">
+                <strong>Snackbar Position:</strong> Success notifications should appear at bottom-left of screen
+            </div>
+            <div class="success-indicator">
+                <strong>HTTP Status Codes:</strong> All operations should log proper status codes (200/201)
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let testResults = {
+            connection: false,
+            orderCreation: false,
+            orderUpdate: false,
+            orderSearch: false,
+            snackbarNotifications: false,
+            conversationFlow: false
+        };
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logContainer = document.getElementById('logContainer');
+            const colors = {
+                info: '#74c0fc',
+                success: '#51cf66',
+                error: '#ff6b6b',
+                warning: '#ffd43b'
+            };
+            
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span style="color: #888">[${timestamp}]</span> <span style="color: ${colors[type]}">${message}</span>`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function updateConnectionStatus(connected, message) {
+            isConnected = connected;
+            const statusDiv = document.getElementById('connectionStatus');
+            const testBtn = document.getElementById('testWorkflowBtn');
+            
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = `✅ ${message}`;
+                testBtn.disabled = false;
+                testResults.connection = true;
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = `❌ ${message}`;
+                testBtn.disabled = true;
+                testResults.connection = false;
+            }
+        }
+        
+        function connectToLISA() {
+            log('🔌 Connecting to LISA backend...', 'info');
+            updateConnectionStatus(false, 'Connecting...');
+            
+            try {
+                socket = io('http://localhost:3001', {
+                    transports: ['websocket', 'polling'],
+                    timeout: 20000,
+                    forceNew: true
+                });
+                
+                socket.on('connect', () => {
+                    log('✅ Connected to LISA successfully!', 'success');
+                    updateConnectionStatus(true, 'Connected to LISA');
+                });
+                
+                socket.on('connected', (data) => {
+                    log(`🎯 LISA session initialized: ${data.sessionId}`, 'success');
+                    log(`💬 LISA says: "${data.message}"`, 'info');
+                });
+                
+                socket.on('voice-response', (data) => {
+                    log(`🤖 LISA Response: "${data.response}"`, 'success');
+                    
+                    if (data.action) {
+                        log(`🎯 Action triggered: ${data.action}`, 'info');
+                        
+                        // Test for order creation
+                        if (data.action === 'CREATE_ORDER' || data.action === 'order_created') {
+                            testResults.orderCreation = true;
+                            if (data.data?.id) {
+                                log(`✅ Order created with ID: ${data.data.id}`, 'success');
+                                testResults.snackbarNotifications = true;
+                                showMockSnackbar(`✅ Order created with ID: ${data.data.id}`);
+                            }
+                        }
+                        
+                        // Test for order updates
+                        if (data.action === 'UPDATE_ORDER' || data.action === 'order_updated') {
+                            testResults.orderUpdate = true;
+                            if (data.data?.success) {
+                                log(`✅ Order updated successfully`, 'success');
+                                showMockSnackbar(`✅ Order status updated successfully`);
+                            }
+                        }
+                        
+                        // Test for search results
+                        if (data.action === 'ORDERS_FOUND' || data.action === 'search_results') {
+                            testResults.orderSearch = true;
+                            if (data.data?.orders) {
+                                log(`🔍 Found ${data.data.orders.length} orders (Total: $${data.data.totalCost || 0})`, 'success');
+                                log(`📊 Search dialog should open with results`, 'info');
+                            }
+                        }
+                        
+                        // Test conversation flow
+                        if (data.action === 'end_conversation') {
+                            testResults.conversationFlow = true;
+                            log(`👋 Conversation ended gracefully`, 'success');
+                        }
+                    }
+                    
+                    updateResultsSummary();
+                });
+                
+                socket.on('connect_error', (error) => {
+                    log(`❌ Connection error: ${error.message}`, 'error');
+                    updateConnectionStatus(false, 'Connection failed');
+                });
+                
+                socket.on('disconnect', (reason) => {
+                    log(`🔌 Disconnected: ${reason}`, 'warning');
+                    updateConnectionStatus(false, 'Disconnected');
+                });
+                
+            } catch (error) {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                updateConnectionStatus(false, 'Connection failed');
+            }
+        }
+        
+        function disconnectFromLISA() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            updateConnectionStatus(false, 'Disconnected');
+            log('🔌 Disconnected from LISA', 'warning');
+        }
+        
+        function testCommand(element) {
+            const command = element.getAttribute('data-command');
+            
+            if (!socket || !isConnected) {
+                log('❌ Connect to LISA first', 'error');
+                return;
+            }
+            
+            log(`🎤 Testing: "${command}"`, 'info');
+            
+            socket.emit('voice-command', {
+                transcript: command,
+                isEndOfSpeech: true,
+                interimResults: false,
+                useNaturalConversation: true
+            });
+            
+            // Highlight the tested command
+            element.style.background = 'rgba(76, 175, 80, 0.3)';
+            setTimeout(() => {
+                element.style.background = 'rgba(255, 255, 255, 0.1)';
+            }, 2000);
+        }
+        
+        function testFullOrderWorkflow() {
+            if (!socket || !isConnected) {
+                log('❌ Connect to LISA first', 'error');
+                return;
+            }
+            
+            log('🚀 Starting full order management workflow test...', 'info');
+            
+            const workflowCommands = [
+                { command: "Hello LISA, I need to test order management", delay: 1000 },
+                { command: "Create a new order for 5 tempered glass panels for Test Customer", delay: 3000 },
+                { command: "Show me all orders in the system", delay: 4000 },
+                { command: "Update order EXP-9001 status to delivered", delay: 4000 },
+                { command: "Find orders above $15,000", delay: 4000 },
+                { command: "Thank you LISA, workflow test complete", delay: 3000 }
+            ];
+            
+            let currentIndex = 0;
+            
+            function executeNextCommand() {
+                if (currentIndex < workflowCommands.length) {
+                    const item = workflowCommands[currentIndex];
+                    log(`🎤 Workflow step ${currentIndex + 1}/${workflowCommands.length}: "${item.command}"`, 'info');
+                    
+                    socket.emit('voice-command', {
+                        transcript: item.command,
+                        isEndOfSpeech: true,
+                        interimResults: false,
+                        useNaturalConversation: true
+                    });
+                    
+                    currentIndex++;
+                    
+                    if (currentIndex < workflowCommands.length) {
+                        setTimeout(executeNextCommand, item.delay);
+                    } else {
+                        log('✅ Full workflow test completed!', 'success');
+                    }
+                }
+            }
+            
+            executeNextCommand();
+        }
+        
+        function showMockSnackbar(message) {
+            // Create a mock snackbar to simulate the actual notification
+            const mockSnackbar = document.createElement('div');
+            mockSnackbar.style.cssText = `
+                position: fixed;
+                bottom: 24px;
+                left: 24px;
+                background: #4CAF50;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                z-index: 2000;
+                animation: slideInLeft 0.3s ease;
+                max-width: 400px;
+            `;
+            mockSnackbar.textContent = message;
+            
+            // Add animation keyframes
+            if (!document.getElementById('snackbarStyles')) {
+                const style = document.createElement('style');
+                style.id = 'snackbarStyles';
+                style.textContent = `
+                    @keyframes slideInLeft {
+                        from { transform: translateX(-100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            document.body.appendChild(mockSnackbar);
+            
+            log(`📱 Snackbar shown: "${message}"`, 'success');
+            
+            // Remove after 4 seconds
+            setTimeout(() => {
+                if (mockSnackbar.parentNode) {
+                    mockSnackbar.remove();
+                }
+            }, 4000);
+        }
+        
+        function showDemoNotification() {
+            const demo = document.getElementById('notificationDemo');
+            demo.style.display = 'block';
+            setTimeout(() => {
+                demo.style.display = 'none';
+            }, 3000);
+        }
+        
+        function updateResultsSummary() {
+            const summary = document.getElementById('resultsSummary');
+            const content = document.getElementById('summaryContent');
+            
+            let passedTests = 0;
+            let totalTests = Object.keys(testResults).length;
+            
+            let summaryHTML = '';
+            for (const [test, passed] of Object.entries(testResults)) {
+                const icon = passed ? '✅' : '❌';
+                const status = passed ? 'PASSED' : 'PENDING';
+                summaryHTML += `<div>${icon} ${test.replace(/([A-Z])/g, ' $1').toUpperCase()}: ${status}</div>`;
+                if (passed) passedTests++;
+            }
+            
+            content.innerHTML = summaryHTML;
+            summary.style.display = 'block';
+            
+            log(`📊 Test Progress: ${passedTests}/${totalTests} tests passed`, 'info');
+        }
+        
+        function clearResults() {
+            document.getElementById('logContainer').innerHTML = '';
+            document.getElementById('resultsSummary').style.display = 'none';
+            testResults = {
+                connection: false,
+                orderCreation: false,
+                orderUpdate: false,
+                orderSearch: false,
+                snackbarNotifications: false,
+                conversationFlow: false
+            };
+            log('🗑️ Results cleared', 'info');
+        }
+        
+        // Auto-connect on page load
+        window.addEventListener('load', () => {
+            log('🚀 LISA Order Management Test Interface loaded', 'info');
+            log('Click "Connect to LISA" to begin testing', 'info');
+        });
+    </script>
+</body>
+</html>

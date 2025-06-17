@@ -199,6 +199,11 @@ export const LISAInterface: React.FC = () => {
           setSnackbarMessage(`✅ Order created with ID: ${data.data.id}`);
           setSnackbarOpen(true);
         }
+      } else if (data.action === 'UPDATE_ORDER' || data.action === 'order_updated') {
+        if (data.data?.success) {
+          setSnackbarMessage(`✅ Order ${data.data.orderNumber} status updated to ${data.data.newStatus}`);
+          setSnackbarOpen(true);
+        }
       } else if (data.action === 'end_conversation') {
         endConversation();
       }
@@ -669,7 +674,7 @@ export const LISAInterface: React.FC = () => {
         autoHideDuration={6000}
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       />
       
       {/* Search Results Dialog */}
