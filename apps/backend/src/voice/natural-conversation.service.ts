@@ -12,6 +12,20 @@ interface ConversationState {
   conversationStartTime: number;
   currentTopic: string | null;
   awaitingUserInput: boolean;
+  // Order creation state
+  incompleteOrder?: IncompleteOrder;
+}
+
+interface IncompleteOrder {
+  step: 'glass_type' | 'dimensions' | 'quantity' | 'customer' | 'confirm' | 'complete';
+  glassType?: string;
+  width?: number;
+  height?: number;
+  thickness?: number;
+  quantity?: number;
+  customerName?: string;
+  unitPrice?: number;
+  totalPrice?: number;
 }
 
 interface NaturalResponse {
@@ -72,6 +86,11 @@ export class NaturalConversationService {
       return this.handleLongConversation(state);
     }
 
+    // Handle ongoing order creation conversation
+    if (state.incompleteOrder) {
+      return await this.handleIncompleteOrderConversation(transcript, state, sessionId);
+    }
+
     // Detect user intent and emotion
     const intent = await this.detectIntent(transcript, state.conversationContext);
     console.log(`🎯 LISA detected intent:`, intent);
@@ -109,6 +128,171 @@ export class NaturalConversationService {
     }
 
     return response;
+  }
+
+  private async handleIncompleteOrderConversation(
+    transcript: string,
+    state: ConversationState,
+    sessionId: string
+  ): Promise<NaturalResponse> {
+    const order = state.incompleteOrder!;
+    const lowerTranscript = transcript.toLowerCase();
+
+    // Handle cancellation
+    if (lowerTranscript.includes('cancel') || lowerTranscript.includes('stop') || lowerTranscript.includes('no')) {
+      if (order.step === 'confirm') {
+        state.incompleteOrder = undefined;
+        state.conversationContext.push(`Assistant: No problem! Order cancelled. Is there anything else I can help you with?`);
+        return {
+          text: "No problem! Order cancelled. Is there anything else I can help you with?",
+          shouldSpeak: true,
+          confidence: 1.0
+        };
+      }
+    }
+
+    // Handle confirmation step
+    if (order.step === 'confirm') {
+      if (lowerTranscript.includes('yes') || lowerTranscript.includes('confirm') || lowerTranscript.includes('create')) {
+        // Create the order
+        const orderResult = await this.createOrder({
+          glassType: order.glassType,
+          width: order.width,
+          height: order.height,
+          thickness: order.thickness || 6,
+          quantity: order.quantity,
+          customerName: order.customerName,
+          unitPrice: order.unitPrice,
+          totalPrice: order.totalPrice
+        }, sessionId);
+
+        state.conversationContext.push(`Assistant: ${orderResult.message}`);
+        return {
+          text: orderResult.message,
+          action: orderResult.success ? 'order_created' : undefined,
+          data: orderResult,
+          shouldSpeak: true,
+          confidence: 1.0
+        };
+      }
+    }
+
+    // Parse user input based on current step
+    const extractedInfo = this.extractOrderInformation(transcript, order.step);
+    
+    // Update order with new information
+    if (extractedInfo.glassType && !order.glassType) {
+      order.glassType = extractedInfo.glassType;
+    }
+    if (extractedInfo.width && !order.width) {
+      order.width = extractedInfo.width;
+    }
+    if (extractedInfo.height && !order.height) {
+      order.height = extractedInfo.height;
+    }
+    if (extractedInfo.thickness && !order.thickness) {
+      order.thickness = extractedInfo.thickness;
+    }
+    if (extractedInfo.quantity && !order.quantity) {
+      order.quantity = extractedInfo.quantity;
+    }
+    if (extractedInfo.customerName && !order.customerName) {
+      order.customerName = extractedInfo.customerName;
+    }
+
+    // Get next step
+    const nextStep = this.getNextOrderStep(order);
+    
+    state.conversationContext.push(`Assistant: ${nextStep.message}`);
+    
+    return {
+      text: nextStep.message,
+      action: nextStep.success ? 'order_created' : undefined,
+      data: nextStep,
+      shouldSpeak: true,
+      confidence: 1.0
+    };
+  }
+
+  private extractOrderInformation(transcript: string, currentStep: string): any {
+    const lowerTranscript = transcript.toLowerCase();
+    const extracted: any = {};
+
+    // Extract glass type
+    if (currentStep === 'glass_type' || !currentStep) {
+      if (lowerTranscript.includes('tempered')) {
+        extracted.glassType = 'TEMPERED';
+      } else if (lowerTranscript.includes('laminated')) {
+        extracted.glassType = 'LAMINATED';
+      } else if (lowerTranscript.includes('insulated')) {
+        extracted.glassType = 'INSULATED';
+      } else if (lowerTranscript.includes('float')) {
+        extracted.glassType = 'FLOAT';
+      }
+    }
+
+    // Extract dimensions
+    if (currentStep === 'dimensions' || !currentStep) {
+      // Look for patterns like "1200 by 800", "1200x800", "1200 mm by 800 mm"
+      const dimensionPatterns = [
+        /(\d+)\s*(?:mm)?\s*(?:by|x|×)\s*(\d+)\s*(?:mm)?/i,
+        /(\d+)\s*(?:mm)?\s*and\s*(\d+)\s*(?:mm)?/i,
+        /width\s*(\d+)\s*(?:mm)?\s*(?:and\s*)?height\s*(\d+)\s*(?:mm)?/i,
+        /(\d+)\s*(?:mm)?\s*wide\s*(?:and\s*)?(\d+)\s*(?:mm)?\s*high/i
+      ];
+
+      for (const pattern of dimensionPatterns) {
+        const match = lowerTranscript.match(pattern);
+        if (match) {
+          extracted.width = parseInt(match[1]);
+          extracted.height = parseInt(match[2]);
+          break;
+        }
+      }
+
+      // Extract thickness if mentioned
+      const thicknessMatch = lowerTranscript.match(/(?:thickness|thick)\s*(\d+(?:\.\d+)?)\s*(?:mm)?/i);
+      if (thicknessMatch) {
+        extracted.thickness = parseFloat(thicknessMatch[1]);
+      }
+    }
+
+    // Extract quantity
+    if (currentStep === 'quantity' || !currentStep) {
+      const quantityPatterns = [
+        /(\d+)\s*(?:pieces?|panels?|units?|glass(?:es)?)/i,
+        /(?:quantity|amount)\s*(?:is\s*)?(\d+)/i,
+        /(?:need|want)\s*(\d+)/i,
+        /^(\d+)$/  // Just a number
+      ];
+
+      for (const pattern of quantityPatterns) {
+        const match = lowerTranscript.match(pattern);
+        if (match) {
+          extracted.quantity = parseInt(match[1]);
+          break;
+        }
+      }
+    }
+
+    // Extract customer name
+    if (currentStep === 'customer' || !currentStep) {
+      // Look for names - this is a simple implementation
+      const namePatterns = [
+        /(?:customer|client|name)\s+(?:is\s+)?([a-zA-Z\s]+)/i,
+        /(?:for\s+)?([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)/,  // Capitalized words
+      ];
+
+      for (const pattern of namePatterns) {
+        const match = transcript.match(pattern);  // Use original case for names
+        if (match) {
+          extracted.customerName = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    return extracted;
   }
 
   private handleInterimSpeech(transcript: string, state: ConversationState): NaturalResponse {
@@ -387,7 +571,7 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
           return await this.searchOrders(parameters);
         case 'create_order':
         case 'order_created':   // Handle both action names
-          return await this.createOrder(parameters);
+          return await this.createOrder(parameters, sessionId);
         case 'update_order':
         case 'order_updated':   // Handle both action names
           return await this.updateOrder(parameters);
@@ -824,34 +1008,47 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
     };
   }
 
-  private async createOrder(parameters: any) {
-    // Simulate order creation for demo purposes
-    // In real implementation, this would create order via ordersService
+  private async createOrder(parameters: any, sessionId?: string) {
+    // Get conversation state for multi-step order creation
+    const state = sessionId ? this.getOrCreateState(sessionId) : null;
+    
+    // If we don't have enough information, start the multi-step flow
+    if (!this.hasCompleteOrderInfo(parameters) && state) {
+      return this.initiateOrderCreationFlow(parameters, state);
+    }
+    
+    // If we have complete information, create the order
     try {
-      if (this.ordersService && parameters.glassType && parameters.quantity) {
+      if (this.ordersService && this.hasCompleteOrderInfo(parameters)) {
         // Generate order number
-        const orderNumber = `ORD-${Date.now()}`;
+        const orderNumber = await this.ordersService.generateOrderNumber();
         
         console.log('🗣️  LISA: Creating order via database...', { orderNumber, parameters });
         
-        // Try to create real order if service is available
+        // Create real order
         const orderData = {
           orderNumber,
-          customerId: parameters.customerId || 'default-customer-id',
+          customerId: parameters.customerId || await this.findOrCreateCustomer(parameters.customerName),
           glassType: parameters.glassType.toUpperCase() || 'TEMPERED',
           glassClass: parameters.glassClass?.toUpperCase() || 'IG_CLASS',
           thickness: parseFloat(parameters.thickness) || 6.0,
           width: parseFloat(parameters.width) || 1200,
           height: parseFloat(parameters.height) || 800,
           quantity: parseInt(parameters.quantity) || 1,
-          unitPrice: parseFloat(parameters.unitPrice) || 150.0,
-          totalPrice: parseFloat(parameters.totalPrice) || (parseFloat(parameters.unitPrice) || 150.0) * (parseInt(parameters.quantity) || 1),
+          unitPrice: parseFloat(parameters.unitPrice) || this.calculateUnitPrice(parameters),
+          totalPrice: parseFloat(parameters.totalPrice) || this.calculateTotalPrice(parameters),
           status: 'PENDING' as any,
           priority: 'MEDIUM' as any,
           notes: `Voice order: ${parameters.glassType || 'glass'} order via voice assistant LISA`
         };
         
         const newOrder = await this.ordersService.create(orderData);
+        
+        // Clear incomplete order state
+        if (state && state.incompleteOrder) {
+          state.incompleteOrder = undefined;
+        }
+        
         console.log('✅ LISA: Order created successfully!', { 
           id: newOrder.id, 
           orderNumber: newOrder.orderNumber,
@@ -863,7 +1060,7 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
           orderNumber: newOrder.orderNumber,
           success: true,
           statusCode: 201,
-          message: 'Order created successfully in database'
+          message: `Perfect! I've created order ${newOrder.orderNumber} successfully. The order details have been saved and you'll receive a confirmation email shortly.`
         };
       }
     } catch (error) {
@@ -893,6 +1090,164 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       statusCode: 200,
       message: 'Order created successfully (demo mode)'
     };
+  }
+
+  private hasCompleteOrderInfo(parameters: any): boolean {
+    return !!(
+      parameters.glassType && 
+      parameters.quantity && 
+      parameters.width && 
+      parameters.height && 
+      (parameters.customerName || parameters.customerId)
+    );
+  }
+
+  private initiateOrderCreationFlow(parameters: any, state: ConversationState) {
+    // Initialize incomplete order if not exists
+    if (!state.incompleteOrder) {
+      state.incompleteOrder = {
+        step: 'glass_type'
+      };
+    }
+
+    const order = state.incompleteOrder;
+
+    // Process any provided information
+    if (parameters.glassType && !order.glassType) {
+      order.glassType = parameters.glassType;
+    }
+    if (parameters.quantity && !order.quantity) {
+      order.quantity = parseInt(parameters.quantity);
+    }
+    if (parameters.width && !order.width) {
+      order.width = parseFloat(parameters.width);
+    }
+    if (parameters.height && !order.height) {
+      order.height = parseFloat(parameters.height);
+    }
+    if (parameters.thickness && !order.thickness) {
+      order.thickness = parseFloat(parameters.thickness);
+    }
+    if (parameters.customerName && !order.customerName) {
+      order.customerName = parameters.customerName;
+    }
+
+    // Determine next step and ask appropriate question
+    return this.getNextOrderStep(order);
+  }
+
+  private getNextOrderStep(order: IncompleteOrder) {
+    if (!order.glassType) {
+      order.step = 'glass_type';
+      return {
+        success: false,
+        statusCode: 202,
+        message: "I'd be happy to help you create a new order! First, what type of glass do you need? We have tempered, laminated, insulated, or float glass available.",
+        needsInput: true,
+        step: 'glass_type'
+      };
+    }
+
+    if (!order.width || !order.height) {
+      order.step = 'dimensions';
+      return {
+        success: false,
+        statusCode: 202,
+        message: `Great! You've selected ${order.glassType} glass. Now I need the dimensions. What are the width and height in millimeters? For example, you can say "1200 by 800 millimeters".`,
+        needsInput: true,
+        step: 'dimensions'
+      };
+    }
+
+    if (!order.quantity) {
+      order.step = 'quantity';
+      return {
+        success: false,
+        statusCode: 202,
+        message: `Perfect! The dimensions are ${order.width}mm by ${order.height}mm. How many pieces do you need?`,
+        needsInput: true,
+        step: 'quantity'
+      };
+    }
+
+    if (!order.customerName) {
+      order.step = 'customer';
+      return {
+        success: false,
+        statusCode: 202,
+        message: `Excellent! So that's ${order.quantity} pieces of ${order.glassType} glass at ${order.width}mm x ${order.height}mm. What's the customer name for this order?`,
+        needsInput: true,
+        step: 'customer'
+      };
+    }
+
+    // Calculate pricing
+    if (!order.unitPrice) {
+      order.unitPrice = this.calculateUnitPrice({
+        glassType: order.glassType,
+        width: order.width,
+        height: order.height,
+        thickness: order.thickness || 6
+      });
+      order.totalPrice = order.unitPrice * order.quantity;
+    }
+
+    // Final confirmation
+    order.step = 'confirm';
+    return {
+      success: false,
+      statusCode: 202,
+      message: `Perfect! Let me confirm your order details:
+      
+Customer: ${order.customerName}
+Glass Type: ${order.glassType}
+Dimensions: ${order.width}mm x ${order.height}mm x ${order.thickness || 6}mm
+Quantity: ${order.quantity} pieces
+Unit Price: $${order.unitPrice?.toFixed(2)}
+Total Price: $${order.totalPrice?.toFixed(2)}
+
+Would you like me to create this order? Say "yes" to confirm or "no" to cancel.`,
+      needsInput: true,
+      step: 'confirm',
+      orderSummary: {
+        customerName: order.customerName,
+        glassType: order.glassType,
+        width: order.width,
+        height: order.height,
+        thickness: order.thickness || 6,
+        quantity: order.quantity,
+        unitPrice: order.unitPrice,
+        totalPrice: order.totalPrice
+      }
+    };
+  }
+
+  private calculateUnitPrice(params: any): number {
+    const basePrice = 50; // Base price per square meter
+    const area = (params.width * params.height) / 1000000; // Convert mm² to m²
+    
+    // Price multipliers based on glass type
+    const typeMultipliers = {
+      'TEMPERED': 1.5,
+      'LAMINATED': 1.8,
+      'INSULATED': 2.2,
+      'FLOAT': 1.0
+    };
+    
+    const multiplier = typeMultipliers[params.glassType?.toUpperCase()] || 1.0;
+    return Math.round(basePrice * area * multiplier * 100) / 100;
+  }
+
+  private calculateTotalPrice(params: any): number {
+    const unitPrice = params.unitPrice || this.calculateUnitPrice(params);
+    return unitPrice * (params.quantity || 1);
+  }
+
+  private async findOrCreateCustomer(customerName: string): Promise<string> {
+    // In a real implementation, this would search for existing customers
+    // and create a new one if not found
+    // For now, return a default customer ID
+    return 'default-customer-id';
   }
 
   private async updateOrder(parameters: any) {

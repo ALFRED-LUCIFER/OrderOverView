@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Step Order Creation Test</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .test-step {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .test-step.active {
+            border-left-color: #28a745;
+            background: #f8fff9;
+        }
+        .test-step.completed {
+            border-left-color: #6c757d;
+            background: #f1f1f1;
+            opacity: 0.8;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        
+        .log {
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 20px 0;
+        }
+        
+        .order-summary {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .connection-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Multi-Step Order Creation Test</h1>
+            <p>Testing the enhanced LISA conversation flow with step-by-step order creation and improved WebSocket connection management</p>
+        </div>
+
+        <div class="connection-stats">
+            <div class="stat-card">
+                <div class="stat-value" id="connectionCount">0</div>
+                <div class="stat-label">Active Connections</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="messageCount">0</div>
+                <div class="stat-label">Messages Sent</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="orderSteps">0</div>
+                <div class="stat-label">Order Steps Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="connectionHealth">Unknown</div>
+                <div class="stat-label">Connection Health</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔌 Connection Management Test</h3>
+            <button onclick="connectLISA()">Connect to LISA</button>
+            <button onclick="testMultipleConnections()">Test Multiple Connections</button>
+            <button onclick="checkConnectionHealth()">Check Health</button>
+            <button onclick="disconnectAll()">Disconnect All</button>
+            <div id="connectionStatus" class="status info">Ready to connect...</div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Multi-Step Order Creation Test</h3>
+            <div class="test-step" id="step-1">
+                <strong>Step 1:</strong> Initiate order creation
+                <button onclick="startOrderCreation()">Start "Create new order"</button>
+            </div>
+            <div class="test-step" id="step-2">
+                <strong>Step 2:</strong> Specify glass type
+                <button onclick="specifyGlassType()">Say "Tempered glass"</button>
+            </div>
+            <div class="test-step" id="step-3">
+                <strong>Step 3:</strong> Provide dimensions
+                <button onclick="provideDimensions()">Say "1200 by 800 millimeters"</button>
+            </div>
+            <div class="test-step" id="step-4">
+                <strong>Step 4:</strong> Specify quantity
+                <button onclick="specifyQuantity()">Say "5 pieces"</button>
+            </div>
+            <div class="test-step" id="step-5">
+                <strong>Step 5:</strong> Provide customer name
+                <button onclick="provideCustomer()">Say "John Smith"</button>
+            </div>
+            <div class="test-step" id="step-6">
+                <strong>Step 6:</strong> Confirm order
+                <button onclick="confirmOrder()">Say "Yes, create it"</button>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🎭 Advanced Conversation Tests</h3>
+            <button onclick="testPartialInformation()">Test Partial Info</button>
+            <button onclick="testCancellation()">Test Cancellation</button>
+            <button onclick="testErrorRecovery()">Test Error Recovery</button>
+            <button onclick="testMultipleOrders()">Test Multiple Orders</button>
+        </div>
+
+        <div class="order-summary" id="orderSummary" style="display: none;">
+            <h4>📋 Current Order Progress</h4>
+            <div id="orderDetails"></div>
+        </div>
+
+        <div class="log" id="log"></div>
+
+        <div class="test-section">
+            <h3>📊 Test Results</h3>
+            <div id="testResults">
+                <div>✅ Connection establishment: <span id="connectionTest">Pending</span></div>
+                <div>✅ Multi-step flow initiation: <span id="flowInitiation">Pending</span></div>
+                <div>✅ Information extraction: <span id="infoExtraction">Pending</span></div>
+                <div>✅ State persistence: <span id="statePersistence">Pending</span></div>
+                <div>✅ Order confirmation: <span id="orderConfirmation">Pending</span></div>
+                <div>✅ Connection cleanup: <span id="connectionCleanup">Pending</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let messageCount = 0;
+        let orderStepsCompleted = 0;
+        let currentOrderStep = null;
+        let orderState = {};
+        let connections = [];
+        let testResults = {
+            connectionTest: 'Pending',
+            flowInitiation: 'Pending',
+            infoExtraction: 'Pending',
+            statePersistence: 'Pending',
+            orderConfirmation: 'Pending',
+            connectionCleanup: 'Pending'
+        };
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            logElement.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function updateStats() {
+            document.getElementById('connectionCount').textContent = connections.length;
+            document.getElementById('messageCount').textContent = messageCount;
+            document.getElementById('orderSteps').textContent = orderStepsCompleted;
+            document.getElementById('connectionHealth').textContent = isConnected ? 'Healthy' : 'Disconnected';
+        }
+
+        function updateTestResult(test, status) {
+            testResults[test] = status;
+            document.getElementById(test).textContent = status;
+            document.getElementById(test).style.color = status === 'Passed' ? '#28a745' : status === 'Failed' ? '#dc3545' : '#6c757d';
+        }
+
+        function updateOrderSummary() {
+            const summary = document.getElementById('orderSummary');
+            const details = document.getElementById('orderDetails');
+            
+            if (Object.keys(orderState).length > 0) {
+                summary.style.display = 'block';
+                details.innerHTML = `
+                    <div><strong>Glass Type:</strong> ${orderState.glassType || 'Not specified'}</div>
+                    <div><strong>Dimensions:</strong> ${orderState.width && orderState.height ? `${orderState.width}mm x ${orderState.height}mm` : 'Not specified'}</div>
+                    <div><strong>Quantity:</strong> ${orderState.quantity || 'Not specified'}</div>
+                    <div><strong>Customer:</strong> ${orderState.customerName || 'Not specified'}</div>
+                    <div><strong>Current Step:</strong> ${currentOrderStep || 'None'}</div>
+                `;
+            } else {
+                summary.style.display = 'none';
+            }
+        }
+
+        function markStepCompleted(stepNumber) {
+            const step = document.getElementById(`step-${stepNumber}`);
+            if (step) {
+                step.classList.add('completed');
+                step.classList.remove('active');
+            }
+            orderStepsCompleted = stepNumber;
+            updateStats();
+        }
+
+        function markStepActive(stepNumber) {
+            // Remove active class from all steps
+            for (let i = 1; i <= 6; i++) {
+                const step = document.getElementById(`step-${i}`);
+                if (step) step.classList.remove('active');
+            }
+            
+            // Add active class to current step
+            const step = document.getElementById(`step-${stepNumber}`);
+            if (step) step.classList.add('active');
+        }
+
+        function connectLISA() {
+            if (socket) {
+                log('Disconnecting existing connection first...', 'warning');
+                socket.disconnect();
+            }
+
+            const wsUrl = window.location.hostname.includes('vercel.app') 
+                ? 'wss://orderoverview-dkro.onrender.com'
+                : 'ws://localhost:3001';
+
+            log(`Connecting to LISA at ${wsUrl}...`);
+            
+            socket = io(wsUrl, {
+                transports: ['websocket', 'polling'],
+                timeout: 20000,
+                forceNew: true
+            });
+
+            socket.on('connect', () => {
+                log('Socket connected with ID: ' + socket.id, 'success');
+                isConnected = true;
+                connections.push(socket.id);
+                updateStats();
+                updateTestResult('connectionTest', 'Passed');
+                document.getElementById('connectionStatus').innerHTML = '<div class="success">Connected to LISA successfully!</div>';
+            });
+
+            socket.on('connected', (data) => {
+                log(`LISA session initialized: ${data.sessionId}`, 'success');
+                log(`LISA says: "${data.message}"`);
+            });
+
+            socket.on('voice-response', (data) => {
+                log(`LISA Response: "${data.response}"`, 'success');
+                
+                if (data.data) {
+                    if (data.data.step) {
+                        currentOrderStep = data.data.step;
+                        log(`Order step: ${data.data.step}`, 'info');
+                        
+                        // Update order state from response
+                        if (data.data.orderSummary) {
+                            orderState = { ...orderState, ...data.data.orderSummary };
+                        }
+                        
+                        updateOrderSummary();
+                        
+                        // Update test results based on step
+                        if (data.data.step === 'glass_type') {
+                            updateTestResult('flowInitiation', 'Passed');
+                            markStepActive(2);
+                        } else if (data.data.step === 'dimensions') {
+                            updateTestResult('infoExtraction', 'Passed');
+                            markStepCompleted(2);
+                            markStepActive(3);
+                        } else if (data.data.step === 'quantity') {
+                            markStepCompleted(3);
+                            markStepActive(4);
+                        } else if (data.data.step === 'customer') {
+                            markStepCompleted(4);
+                            markStepActive(5);
+                        } else if (data.data.step === 'confirm') {
+                            updateTestResult('statePersistence', 'Passed');
+                            markStepCompleted(5);
+                            markStepActive(6);
+                        }
+                    }
+                    
+                    if (data.action === 'order_created' && data.data.success) {
+                        log(`Order created successfully: ${data.data.orderNumber}`, 'success');
+                        updateTestResult('orderConfirmation', 'Passed');
+                        markStepCompleted(6);
+                        orderState = {};
+                        currentOrderStep = null;
+                        updateOrderSummary();
+                    }
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`Connection error: ${error.message}`, 'error');
+                updateTestResult('connectionTest', 'Failed');
+                document.getElementById('connectionStatus').innerHTML = '<div class="error">Connection failed!</div>';
+            });
+
+            socket.on('disconnect', (reason) => {
+                log(`Disconnected: ${reason}`, 'warning');
+                isConnected = false;
+                connections = connections.filter(id => id !== socket.id);
+                updateStats();
+            });
+
+            socket.on('connection_replaced', (data) => {
+                log(`Connection replaced: ${data.reason}`, 'warning');
+            });
+
+            socket.on('health-response', (data) => {
+                log(`Health check response: ${data.status}`, 'success');
+            });
+        }
+
+        function sendMessage(message) {
+            if (!socket || !isConnected) {
+                log('Not connected to LISA!', 'error');
+                return;
+            }
+
+            log(`Sending: "${message}"`);
+            socket.emit('voice-command', {
+                transcript: message,
+                isEndOfSpeech: true,
+                interimResults: false,
+                useNaturalConversation: true
+            });
+            
+            messageCount++;
+            updateStats();
+        }
+
+        function startOrderCreation() {
+            sendMessage('Create a new order');
+            markStepActive(1);
+            markStepCompleted(1);
+        }
+
+        function specifyGlassType() {
+            sendMessage('Tempered glass');
+            orderState.glassType = 'TEMPERED';
+            updateOrderSummary();
+        }
+
+        function provideDimensions() {
+            sendMessage('1200 by 800 millimeters');
+            orderState.width = 1200;
+            orderState.height = 800;
+            updateOrderSummary();
+        }
+
+        function specifyQuantity() {
+            sendMessage('5 pieces');
+            orderState.quantity = 5;
+            updateOrderSummary();
+        }
+
+        function provideCustomer() {
+            sendMessage('John Smith');
+            orderState.customerName = 'John Smith';
+            updateOrderSummary();
+        }
+
+        function confirmOrder() {
+            sendMessage('Yes, create it');
+        }
+
+        function testPartialInformation() {
+            sendMessage('Create an order for 10 tempered glass panels for ABC Corp');
+            log('Testing partial information extraction...', 'info');
+        }
+
+        function testCancellation() {
+            sendMessage('Actually, cancel that order');
+            log('Testing order cancellation...', 'info');
+        }
+
+        function testErrorRecovery() {
+            sendMessage('uh... what was I saying?');
+            log('Testing error recovery...', 'info');
+        }
+
+        function testMultipleOrders() {
+            setTimeout(() => sendMessage('Create another order'), 1000);
+            setTimeout(() => sendMessage('Laminated glass'), 2000);
+            setTimeout(() => sendMessage('1500 by 900'), 3000);
+            log('Testing multiple orders in sequence...', 'info');
+        }
+
+        function testMultipleConnections() {
+            log('Testing multiple connection handling...', 'warning');
+            
+            for (let i = 0; i < 3; i++) {
+                setTimeout(() => {
+                    const extraSocket = io(window.location.hostname.includes('vercel.app') 
+                        ? 'wss://orderoverview-dkro.onrender.com'
+                        : 'ws://localhost:3001', {
+                        transports: ['websocket', 'polling'],
+                        timeout: 20000,
+                        forceNew: true
+                    });
+                    
+                    extraSocket.on('connect', () => {
+                        log(`Extra connection ${i+1} established: ${extraSocket.id}`, 'info');
+                        connections.push(extraSocket.id);
+                        updateStats();
+                    });
+                    
+                    extraSocket.on('connection_replaced', (data) => {
+                        log(`Extra connection ${i+1} replaced: ${data.reason}`, 'warning');
+                        connections = connections.filter(id => id !== extraSocket.id);
+                        updateStats();
+                    });
+                }, i * 500);
+            }
+        }
+
+        function checkConnectionHealth() {
+            if (socket && isConnected) {
+                socket.emit('health-check');
+                log('Requesting health check...', 'info');
+            } else {
+                log('No active connection to check', 'warning');
+            }
+        }
+
+        function disconnectAll() {
+            if (socket) {
+                socket.disconnect();
+                updateTestResult('connectionCleanup', 'Passed');
+                log('Disconnected from LISA', 'success');
+                document.getElementById('connectionStatus').innerHTML = '<div class="info">Disconnected</div>';
+            }
+            connections = [];
+            isConnected = false;
+            updateStats();
+        }
+
+        // Initialize
+        updateStats();
+        log('Multi-step order creation test ready!', 'success');
+        log('Click "Connect to LISA" to begin testing...', 'info');
+    </script>
+</body>
+</html>

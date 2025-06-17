@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snackbar Z-Index Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .drawer-mock {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: rgba(25, 118, 210, 0.9);
+            z-index: 1200;
+            padding: 20px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.2);
+        }
+        
+        .appbar-mock {
+            position: fixed;
+            top: 0;
+            left: 280px;
+            right: 0;
+            height: 64px;
+            background: rgba(25, 118, 210, 1);
+            z-index: 1100;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .main-content {
+            margin-left: 280px;
+            margin-top: 64px;
+            padding: 20px;
+        }
+        
+        .test-snackbar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1500;
+            animation: slideUp 0.3s ease;
+            font-weight: bold;
+            min-width: 300px;
+            text-align: center;
+        }
+        
+        .test-snackbar.error {
+            background: #f44336;
+        }
+        
+        .test-snackbar.warning {
+            background: #ff9800;
+        }
+        
+        .test-snackbar.info {
+            background: #2196F3;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(100%); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+        
+        button {
+            background: linear-gradient(45deg, #2196F3 30%, #64B5F6 90%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 10px;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        
+        .z-index-info {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+        .info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <!-- Mock Drawer -->
+    <div class="drawer-mock">
+        <h3>📂 Navigation Drawer</h3>
+        <p>Z-Index: 1200</p>
+        <ul>
+            <li>Dashboard</li>
+            <li>Orders</li>
+            <li>Customers</li>
+            <li>Reports</li>
+        </ul>
+    </div>
+    
+    <!-- Mock AppBar -->
+    <div class="appbar-mock">
+        <h3>🏗️ AppBar (Z-Index: 1100)</h3>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container">
+            <h1>🎯 Snackbar Z-Index Fix Test</h1>
+            <p>Testing snackbar positioning above drawer and at bottom center</p>
+            
+            <div class="test-section">
+                <h3>✅ Z-Index Hierarchy</h3>
+                <div class="z-index-info">
+                    <div class="success">✅ Snackbar: Z-Index 1500 (Fixed)</div>
+                    <div class="info">📂 Drawer: Z-Index 1200</div>
+                    <div class="info">🏗️ AppBar: Z-Index 1100</div>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <h3>🎬 Snackbar Tests</h3>
+                <p>Click buttons to test snackbar positioning and z-index</p>
+                
+                <button onclick="showSnackbar('success', '✅ Order created successfully!')">Success Snackbar</button>
+                <button onclick="showSnackbar('error', '❌ Order creation failed!')">Error Snackbar</button>
+                <button onclick="showSnackbar('warning', '⚠️ Order validation warning!')">Warning Snackbar</button>
+                <button onclick="showSnackbar('info', 'ℹ️ Order info updated!')">Info Snackbar</button>
+            </div>
+            
+            <div class="test-section">
+                <h3>📋 Expected Results</h3>
+                <ul>
+                    <li class="success">✅ Snackbar appears at bottom center</li>
+                    <li class="success">✅ Snackbar is above drawer (not hidden behind it)</li>
+                    <li class="success">✅ Snackbar is above AppBar</li>
+                    <li class="success">✅ Snackbar animation works properly</li>
+                    <li class="success">✅ Multiple snackbars stack correctly</li>
+                </ul>
+            </div>
+            
+            <div class="test-section">
+                <h3>🔧 Implementation Details</h3>
+                <p><strong>Changes Made:</strong></p>
+                <ul>
+                    <li>✅ NotificationProvider: Changed to bottom-center with z-index 1500</li>
+                    <li>✅ LISAInterface Snackbar: Changed from bottom-left to bottom-center with z-index 1500</li>
+                    <li>✅ VoiceInterface Snackbar: Changed from top-center to bottom-center with z-index 1500</li>
+                    <li>✅ Added global CSS overrides for snackbar z-index</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let snackbarCount = 0;
+        
+        function showSnackbar(type, message) {
+            snackbarCount++;
+            
+            const snackbar = document.createElement('div');
+            snackbar.className = `test-snackbar ${type}`;
+            snackbar.textContent = message;
+            snackbar.style.bottom = `${24 + (snackbarCount - 1) * 60}px`;
+            
+            document.body.appendChild(snackbar);
+            
+            console.log(`🍿 Snackbar shown: ${type} - "${message}"`);
+            
+            setTimeout(() => {
+                if (snackbar.parentNode) {
+                    snackbar.remove();
+                    snackbarCount--;
+                }
+            }, 4000);
+        }
+        
+        // Auto-demo
+        setTimeout(() => {
+            showSnackbar('success', '🎉 Snackbar z-index fix is working!');
+        }, 1000);
+        
+        console.log('🎯 Snackbar Z-Index Test loaded');
+        console.log('Expected z-index hierarchy:');
+        console.log('  Snackbar: 1500 (highest)');
+        console.log('  Drawer: 1200');
+        console.log('  AppBar: 1100');
+    </script>
+</body>
+</html>

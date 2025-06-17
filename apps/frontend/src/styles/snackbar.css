@@ -1,0 +1,25 @@
+/* Global snackbar z-index overrides */
+
+/* Notistack SnackbarProvider container */
+.snackbar-container-z-index-1500 {
+  z-index: 1500 !important;
+}
+
+/* Override notistack default z-index */
+.SnackbarContainer-root {
+  z-index: 1500 !important;
+}
+
+/* Override Material-UI Snackbar z-index */
+.MuiSnackbar-root {
+  z-index: 1500 !important;
+}
+
+/* Specific class for bottom-center positioning */
+.snackbar-bottom-center {
+  z-index: 1500 !important;
+  position: fixed !important;
+  bottom: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
