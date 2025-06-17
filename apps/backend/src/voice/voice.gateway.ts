@@ -37,7 +37,9 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     connectTime: number, 
     lastActivity: number,
     ipAddress?: string,
-    userAgent?: string
+    userAgent?: string,
+    clientId?: string,
+    timestamp?: number
   }>();
   private clientsByIP = new Map<string, Set<string>>(); // Track multiple connections from same IP
 
@@ -47,6 +49,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const connectTime = Date.now();
     const ipAddress = client.handshake.address;
     const userAgent = client.handshake.headers['user-agent'];
+    const clientId = client.handshake.auth?.clientId || 'unknown';
+    const timestamp = client.handshake.auth?.timestamp || Date.now();
+    
+    console.log(`🔌 LISA client connecting: ${client.id} (clientId: ${clientId}) from ${ipAddress}`);
     
     // Track connections by IP for potential deduplication
     if (!this.clientsByIP.has(ipAddress)) {
@@ -58,7 +64,9 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       connectTime, 
       lastActivity: connectTime,
       ipAddress,
-      userAgent
+      userAgent,
+      clientId,
+      timestamp
     });
     
     // Check for multiple connections from same IP (potential duplicate connections)
@@ -66,12 +74,13 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     if (ipConnections.size > 1) {
       console.log(`⚠️  Multiple LISA connections from IP ${ipAddress}: ${ipConnections.size} connections`);
       
-      // Optionally disconnect older connections from same IP
-      if (ipConnections.size > 3) { // Allow max 3 connections per IP
-        const oldestConnection = Array.from(ipConnections)[0];
-        console.log(`🔌 Disconnecting oldest connection ${oldestConnection} to prevent connection overload`);
+      // More aggressive cleanup: disconnect older connections from same IP
+      if (ipConnections.size > 2) { // Allow max 2 connections per IP (reduced from 3)
+        const connectionList = Array.from(ipConnections);
+        const oldestConnection = connectionList[0];
+        console.log(`🔌 Disconnecting oldest LISA connection ${oldestConnection} to prevent connection overload`);
         this.server.to(oldestConnection).emit('connection_replaced', {
-          reason: 'Multiple connections detected, keeping the newest one'
+          reason: 'Multiple LISA connections detected, keeping the newest one'
         });
         this.server.sockets.sockets.get(oldestConnection)?.disconnect(true);
       }
@@ -223,20 +232,36 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   private startCleanupInterval() {
     setInterval(() => {
       const now = Date.now();
-      const staleThreshold = 5 * 60 * 1000; // 5 minutes
+      const staleThreshold = 3 * 60 * 1000; // Reduced to 3 minutes for more aggressive cleanup
       
       this.connectedClients.forEach((clientInfo, clientId) => {
         if (now - clientInfo.lastActivity > staleThreshold) {
-          console.log(`🧹 Cleaning up stale connection: ${clientId}`);
+          console.log(`🧹 Cleaning up stale LISA connection: ${clientId} (inactive for ${Math.round((now - clientInfo.lastActivity) / 1000)}s)`);
           const socket = this.server.sockets.sockets.get(clientId);
           if (socket) {
             socket.emit('connection_timeout', { reason: 'Inactive for too long' });
             socket.disconnect(true);
           }
           this.connectedClients.delete(clientId);
+          
+          // Also clean up IP tracking
+          if (clientInfo.ipAddress) {
+            const ipConnections = this.clientsByIP.get(clientInfo.ipAddress);
+            if (ipConnections) {
+              ipConnections.delete(clientId);
+              if (ipConnections.size === 0) {
+                this.clientsByIP.delete(clientInfo.ipAddress);
+              }
+            }
+          }
         }
       });
-    }, 60000); // Check every minute
+      
+      // Log current connection status every 5 minutes
+      if (now % (5 * 60 * 1000) < 60000) {
+        console.log(`📊 LISA Connection Status: ${this.connectedClients.size} active connections across ${this.clientsByIP.size} IPs`);
+      }
+    }, 30000); // Check every 30 seconds for more frequent cleanup
   }
 
   // Get connection statistics
@@ -273,5 +298,68 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   onModuleInit() {
     this.startCleanupInterval();
     console.log('🔧 LISA Voice Gateway initialized with connection monitoring');
+  }
+
+  // Utility method to disconnect all connections from a specific IP
+  disconnectAllFromIP(ipAddress: string): number {
+    const ipConnections = this.clientsByIP.get(ipAddress);
+    if (!ipConnections) return 0;
+    
+    let disconnectedCount = 0;
+    ipConnections.forEach(clientId => {
+      console.log(`🔌 Force disconnecting LISA client ${clientId} from IP ${ipAddress}`);
+      const socket = this.server.sockets.sockets.get(clientId);
+      if (socket) {
+        socket.emit('force_disconnect', { reason: 'Administrative disconnect' });
+        socket.disconnect(true);
+        disconnectedCount++;
+      }
+      this.connectedClients.delete(clientId);
+    });
+    
+    this.clientsByIP.delete(ipAddress);
+    console.log(`🧹 Disconnected ${disconnectedCount} LISA connections from IP ${ipAddress}`);
+    return disconnectedCount;
+  }
+
+  // Method to get detailed connection info for debugging
+  getDetailedConnectionInfo() {
+    const info = {
+      totalConnections: this.connectedClients.size,
+      connectionsPerIP: {},
+      oldestConnection: null as any,
+      newestConnection: null as any
+    };
+
+    let oldestTime = Date.now();
+    let newestTime = 0;
+
+    this.connectedClients.forEach((clientInfo, clientId) => {
+      const ip = clientInfo.ipAddress || 'unknown';
+      if (!info.connectionsPerIP[ip]) {
+        info.connectionsPerIP[ip] = [];
+      }
+      
+      info.connectionsPerIP[ip].push({
+        clientId,
+        socketId: clientId,
+        connectTime: new Date(clientInfo.connectTime).toISOString(),
+        lastActivity: new Date(clientInfo.lastActivity).toISOString(),
+        clientIdAuth: clientInfo.clientId,
+        duration: Math.round((Date.now() - clientInfo.connectTime) / 1000)
+      });
+
+      if (clientInfo.connectTime < oldestTime) {
+        oldestTime = clientInfo.connectTime;
+        info.oldestConnection = { clientId, connectTime: new Date(clientInfo.connectTime).toISOString() };
+      }
+      
+      if (clientInfo.connectTime > newestTime) {
+        newestTime = clientInfo.connectTime;
+        info.newestConnection = { clientId, connectTime: new Date(clientInfo.connectTime).toISOString() };
+      }
+    });
+
+    return info;
   }
 }

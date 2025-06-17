@@ -143,9 +143,25 @@ export const LISAInterface: React.FC = () => {
     const voiceEnabled = import.meta.env.VITE_ENABLE_VOICE === 'true';
     if (!voiceEnabled) return;
 
+    // Prevent multiple connections - check if socket already exists and is connected
+    if (socketRef.current?.connected) {
+      console.log('🔌 LISA WebSocket already connected, skipping connection attempt');
+      return;
+    }
+
+    // Clean up any existing connection first
+    if (socketRef.current) {
+      console.log('🧹 Cleaning up existing LISA WebSocket connection');
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
     // Reset any stuck speech state when component mounts
     audioService.resetSpeechState();
 
+    // Add a unique client identifier to prevent duplicate connections
+    const clientId = `lisa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     // Initialize WebSocket connection
     let wsUrl: string;
     
@@ -157,12 +173,17 @@ export const LISAInterface: React.FC = () => {
       wsUrl = 'ws://localhost:3001';
     }
     
-    console.log('🔌 LISA connecting to:', wsUrl);
+    console.log(`🔌 LISA connecting to: ${wsUrl} with client ID: ${clientId}`);
     socketRef.current = io(wsUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: true,
       autoConnect: true,
+      auth: {
+        clientId: clientId,
+        userAgent: navigator.userAgent,
+        timestamp: Date.now()
+      }
     });
     
     socketRef.current.on('connected', (data) => {
@@ -225,27 +246,42 @@ export const LISAInterface: React.FC = () => {
     });
 
     socketRef.current.on('connect_error', (error) => {
-      console.error('WebSocket error:', error);
+      console.error('LISA WebSocket error:', error);
       setError('Unable to connect to LISA voice service');
       setStatus('error');
     });
 
     socketRef.current.on('disconnect', (reason) => {
-      console.log('WebSocket disconnected:', reason);
+      console.log('LISA WebSocket disconnected:', reason);
       setError('Connection lost');
       setStatus('error');
       
-      if (reason !== 'io client disconnect') {
+      // Only auto-reconnect for unexpected disconnections, not manual ones
+      if (reason !== 'io client disconnect' && reason !== 'transport close' && reason !== 'transport error') {
+        console.log('🔄 LISA attempting reconnection after unexpected disconnect...');
         setTimeout(() => {
-          if (!socketRef.current?.connected) {
-            socketRef.current?.connect();
+          if (!socketRef.current?.connected && socketRef.current) {
+            console.log('🔌 LISA reconnecting...');
+            socketRef.current.connect();
           }
-        }, 3000);
+        }, 5000); // Increased delay to prevent rapid reconnection attempts
+      } else {
+        console.log('🚫 LISA not auto-reconnecting due to disconnect reason:', reason);
       }
     });
 
+    socketRef.current.on('connect', () => {
+      console.log('✅ LISA WebSocket reconnected successfully');
+      setError(null);
+      setStatus('idle');
+    });
+
     return () => {
-      socketRef.current?.disconnect();
+      console.log('🧹 LISA cleaning up WebSocket connection on component unmount');
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
   }, []);
 
