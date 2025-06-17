@@ -40,6 +40,33 @@ export class AudioService {
     }
     this.setupVoiceLoadingHandler();
     this.setupPageVisibilityHandler();
+    
+    // Chrome-specific: Try to load voices immediately
+    this.loadVoicesImmediately();
+  }
+
+  /**
+   * Chrome-specific: Force voice loading
+   */
+  private loadVoicesImmediately(): void {
+    if (!this.speechSynthesis) return;
+    
+    // Chrome sometimes requires calling getVoices() multiple times
+    const loadAttempt = () => {
+      const voices = this.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        this.availableVoices = voices;
+        this.voicesLoaded = true;
+        console.log(`✅ Loaded ${voices.length} voices immediately`);
+        this.selectPreferredVoice();
+      }
+    };
+    
+    // Try multiple times with delays
+    loadAttempt();
+    setTimeout(loadAttempt, 10);
+    setTimeout(loadAttempt, 50);
+    setTimeout(loadAttempt, 100);
   }
 
   /**
@@ -55,17 +82,23 @@ export class AudioService {
       // Initialize audio context
       await this.initializeAudioContext();
 
-      // Wait for voices to load
+      // Wait for voices to load with multiple attempts
       await this.waitForVoices();
 
       // Select preferred voice
       this.selectPreferredVoice();
 
-      // Test TTS with silent utterance
+      // Chrome-specific: Cancel any pending speech
+      if (this.speechSynthesis) {
+        this.speechSynthesis.cancel();
+      }
+
+      // Test TTS with a proper test
       await this.testTTSCapability();
 
       this.isInitialized = true;
       console.log('✅ AudioService initialized successfully');
+      console.log('🔍 Debug info:', this.getDebugInfo());
     } catch (error) {
       console.error('❌ AudioService initialization failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -131,6 +164,16 @@ export class AudioService {
     console.log(`🗣️ Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
     console.log(`🔍 Speech state - isSpeaking: ${this.isSpeaking}, queueLength: ${this.speechQueue.length}`);
 
+    // Ensure we're initialized
+    if (!this.isInitialized) {
+      console.warn('⚠️ AudioService not initialized, attempting to initialize...');
+      try {
+        await this.initialize();
+      } catch (error) {
+        throw new Error('Cannot speak: Audio service not initialized');
+      }
+    }
+
     return new Promise((resolve, reject) => {
       // Check if speechSynthesis is available first
       if (!this.speechSynthesis) {
@@ -139,20 +182,32 @@ export class AudioService {
         return;
       }
 
-      // Stop any current speech before starting new one
-      if (this.isSpeaking) {
-        console.log('🛑 Stopping current speech to start new one...');
-        this.stopSpeaking();
+      // Chrome-specific: Always cancel before speaking to clear any stuck state
+      if (this.speechSynthesis) {
+        this.speechSynthesis.cancel();
+        
+        // Check if we need to wait for cancel to take effect
+        if (this.speechSynthesis.speaking || this.speechSynthesis.pending) {
+          console.warn('⚠️ Speech synthesis still busy after cancel');
+        }
       }
 
-      // Add to queue if currently speaking (after stop attempt)
+      // Check for stuck state and auto-recover
+      if (this.autoRecoverIfStuck()) {
+        console.log('🔄 Recovered from stuck state, continuing...');
+      }
+
+      // Add to queue if currently speaking
       if (this.isSpeaking) {
         console.log('📝 Adding to speech queue...');
         this.speechQueue.push({ text, options, resolve, reject });
         return;
       }
 
-      this.performSpeech(text, options, resolve, reject);
+      // Small delay to ensure Chrome is ready after cancel
+      setTimeout(() => {
+        this.performSpeech(text, options, resolve, reject);
+      }, 10);
     });
   }
 
@@ -194,6 +249,30 @@ export class AudioService {
     if (this.speechSynthesis && typeof this.speechSynthesis.cancel === 'function') {
       this.speechSynthesis.cancel();
     }
+    
+    // Give Chrome a moment to reset
+    setTimeout(() => {
+      console.log('✅ Speech state reset complete');
+    }, 100);
+  }
+
+  /**
+   * Check if speech synthesis is truly stuck and auto-recover
+   */
+  autoRecoverIfStuck(): boolean {
+    if (!this.isSpeaking) return false;
+    
+    const timeSinceStart = Date.now() - this.speechStartTime;
+    const isActuallySpeaking = this.speechSynthesis?.speaking || false;
+    
+    // If we think we're speaking but Chrome says we're not, and it's been more than 2 seconds
+    if (!isActuallySpeaking && timeSinceStart > 2000) {
+      console.warn('🚨 Detected stuck speech state, auto-recovering...');
+      this.resetSpeechState();
+      return true;
+    }
+    
+    return false;
   }
 
   private clearSpeechTimeout(): void {
@@ -243,7 +322,10 @@ export class AudioService {
       currentVoice: this.preferredVoice?.name,
       isSpeaking: this.isSpeaking,
       queueLength: this.speechQueue.length,
-      availableVoicesCount: this.availableVoices.length
+      availableVoicesCount: this.availableVoices.length,
+      speechSynthesisSpeaking: this.speechSynthesis?.speaking,
+      speechSynthesisPending: this.speechSynthesis?.pending,
+      speechSynthesisPaused: this.speechSynthesis?.paused
     };
   }
 
@@ -282,10 +364,11 @@ export class AudioService {
     const loadVoices = () => {
       if (!this.speechSynthesis) return;
       
-      this.availableVoices = this.speechSynthesis.getVoices();
-      if (this.availableVoices.length > 0) {
+      const voices = this.speechSynthesis.getVoices();
+      if (voices.length > 0 && !this.voicesLoaded) {
+        this.availableVoices = voices;
         this.voicesLoaded = true;
-        console.log(`✅ Loaded ${this.availableVoices.length} voices`);
+        console.log(`✅ Loaded ${voices.length} voices via event`);
         this.selectPreferredVoice();
       }
     };
@@ -312,19 +395,31 @@ export class AudioService {
   }
 
   private async waitForVoices(timeout = 5000): Promise<void> {
-    if (this.voicesLoaded) return;
+    if (this.voicesLoaded && this.availableVoices.length > 0) return;
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       
       const checkVoices = () => {
-        if (this.voicesLoaded) {
+        // Try to get voices
+        if (this.speechSynthesis) {
+          const voices = this.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            this.availableVoices = voices;
+            this.voicesLoaded = true;
+            console.log(`✅ Loaded ${voices.length} voices in waitForVoices`);
+            resolve();
+            return;
+          }
+        }
+
+        if (this.voicesLoaded && this.availableVoices.length > 0) {
           resolve();
           return;
         }
 
         if (Date.now() - startTime > timeout) {
-          console.warn('⚠️ Voice loading timeout, using default voice');
+          console.warn('⚠️ Voice loading timeout, continuing anyway');
           this.voicesLoaded = true;
           resolve();
           return;
@@ -338,7 +433,16 @@ export class AudioService {
   }
 
   private selectPreferredVoice(): void {
-    if (!this.voicesLoaded || this.availableVoices.length === 0) return;
+    if (!this.availableVoices || this.availableVoices.length === 0) {
+      console.warn('⚠️ No voices available to select from');
+      return;
+    }
+
+    // Log all available voices for debugging
+    console.log('📋 Available voices:');
+    this.availableVoices.forEach((voice, index) => {
+      console.log(`  ${index}: ${voice.name} (${voice.lang}) ${voice.localService ? '[local]' : '[remote]'}`);
+    });
 
     // Prefer female English voices for LISA
     const femaleEnglishVoices = this.availableVoices.filter(voice => 
@@ -348,7 +452,9 @@ export class AudioService {
         voice.name.toLowerCase().includes('karen') ||
         voice.name.toLowerCase().includes('moira') ||
         voice.name.toLowerCase().includes('susan') ||
-        voice.name.toLowerCase().includes('victoria')
+        voice.name.toLowerCase().includes('victoria') ||
+        voice.name.toLowerCase().includes('zira') || // Windows
+        voice.name.toLowerCase().includes('helena') // Windows
       )
     );
 
@@ -357,8 +463,14 @@ export class AudioService {
       voice.lang.startsWith('en')
     );
 
-    this.preferredVoice = femaleEnglishVoices[0] || 
-                         englishVoices[0] || 
+    // Prefer local voices for better performance
+    const preferLocal = (voices: SpeechSynthesisVoice[]) => {
+      const localVoices = voices.filter(v => v.localService);
+      return localVoices.length > 0 ? localVoices : voices;
+    };
+
+    this.preferredVoice = preferLocal(femaleEnglishVoices)[0] || 
+                         preferLocal(englishVoices)[0] || 
                          this.availableVoices[0];
 
     if (this.preferredVoice) {
@@ -370,15 +482,26 @@ export class AudioService {
     console.log('🧪 Testing TTS capability...');
     
     return new Promise((resolve, reject) => {
-      // Create a very short, silent utterance for testing
-      const testUtterance = new SpeechSynthesisUtterance(' ');
-      testUtterance.volume = 0.01; // Very quiet but not completely silent
-      testUtterance.rate = 10; // Speak very fast
-      testUtterance.pitch = 1;
+      if (!this.speechSynthesis) {
+        console.warn('⚠️ speechSynthesis not available for testing');
+        resolve();
+        return;
+      }
+
+      // Chrome-specific: Clear any pending speech
+      this.speechSynthesis.cancel();
+
+      // Create a proper test utterance
+      const testUtterance = new SpeechSynthesisUtterance('test');
+      testUtterance.volume = 0.1; // Low volume but audible
+      testUtterance.rate = 2; // Fast rate
+      
+      if (this.preferredVoice) {
+        testUtterance.voice = this.preferredVoice;
+      }
       
       let resolved = false;
-      
-      testUtterance.onend = () => {
+      const resolveOnce = () => {
         if (!resolved) {
           resolved = true;
           console.log('✅ TTS capability test passed');
@@ -386,42 +509,20 @@ export class AudioService {
         }
       };
       
+      testUtterance.onend = resolveOnce;
       testUtterance.onerror = (event) => {
-        if (!resolved) {
-          resolved = true;
-          console.warn('⚠️ TTS test error (may be normal):', event.error);
-          // Don't reject on error, as Chrome might block but still work later
-          resolve();
-        }
+        console.warn('⚠️ TTS test error:', event.error);
+        resolveOnce();
       };
       
-      // Timeout for test - don't wait too long
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          console.log('✅ TTS test completed (timeout)');
-          resolve();
-        }
-      }, 500);
+      // Timeout for test
+      setTimeout(resolveOnce, 1000);
       
       try {
-        // Check if speechSynthesis is available before testing
-        if (!this.speechSynthesis) {
-          if (!resolved) {
-            resolved = true;
-            console.warn('⚠️ speechSynthesis not available for testing');
-            resolve(); // Don't fail initialization, just skip the test
-          }
-          return;
-        }
-        
         this.speechSynthesis.speak(testUtterance);
       } catch (error) {
-        if (!resolved) {
-          resolved = true;
-          console.warn('⚠️ TTS test exception (may be normal):', error);
-          resolve(); // Don't fail initialization on test errors
-        }
+        console.warn('⚠️ TTS test exception:', error);
+        resolveOnce();
       }
     });
   }
@@ -442,30 +543,50 @@ export class AudioService {
       const utterance = new SpeechSynthesisUtterance(text);
       
       // Configure voice and speech parameters
-      if (this.preferredVoice) {
+      if (this.preferredVoice && this.availableVoices.includes(this.preferredVoice)) {
         utterance.voice = this.preferredVoice;
         console.log(`🎭 Using voice: ${this.preferredVoice.name}`);
+      } else if (this.availableVoices.length > 0) {
+        // Fallback to first available voice
+        utterance.voice = this.availableVoices[0];
+        console.log(`🎭 Using fallback voice: ${this.availableVoices[0].name}`);
       } else {
-        console.log('⚠️ No preferred voice set, using default');
+        console.warn('⚠️ No voices available, using browser default');
       }
 
-      utterance.rate = options.rate || 0.9;
-      utterance.pitch = options.pitch || 1.0;
-      utterance.volume = options.volume || 0.8;
-      utterance.lang = options.lang || 'en-US';
+      // Use reasonable defaults for Chrome
+      utterance.rate = options.rate ?? 1.0; // Chrome works better with 1.0
+      utterance.pitch = options.pitch ?? 1.0;
+      utterance.volume = options.volume ?? 1.0; // Full volume by default
+      utterance.lang = options.lang || utterance.voice?.lang || 'en-US';
 
       console.log(`🎚️ Speech params - rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume}, lang: ${utterance.lang}`);
 
-      // Set up timeout to prevent stuck state (estimate: 10 chars per second at 0.9 rate)
-      const estimatedDuration = Math.max(3000, (text.length / 10) * 1000 / utterance.rate);
-      const timeoutDuration = Math.min(estimatedDuration + 5000, 30000); // Max 30 seconds
+      // Set up timeout - Chrome-specific: Use shorter, more realistic timeouts
+      const wordsCount = text.split(' ').length;
+      const estimatedDuration = Math.max(2000, (wordsCount * 600) / utterance.rate); // 600ms per word
+      const timeoutDuration = Math.min(estimatedDuration + 3000, 15000); // Max 15 seconds
       
-      console.log(`⏱️ Setting speech timeout: ${timeoutDuration}ms for text length: ${text.length}`);
+      console.log(`⏱️ Setting speech timeout: ${timeoutDuration}ms for ${wordsCount} words`);
       
       this.speechTimeout = setTimeout(() => {
-        console.warn('⚠️ Speech timeout - forcing reset');
-        this.forceSpeechReset();
-        reject(new Error('Speech timeout - utterance took too long'));
+        console.warn('⚠️ Speech timeout - Chrome may have failed to start speech');
+        
+        // Check if speech actually started
+        if (this.speechSynthesis?.speaking) {
+          console.log('🔄 Speech is still active, extending timeout...');
+          // Extend timeout if speech is actually running
+          this.speechTimeout = setTimeout(() => {
+            this.forceSpeechReset();
+            reject(new Error('Speech timeout - utterance took too long'));
+            this.processQueue();
+          }, 10000); // Additional 10 seconds
+        } else {
+          console.log('🚨 Speech never started, resetting immediately');
+          this.forceSpeechReset();
+          reject(new Error('Speech failed to start - Chrome audio issue'));
+          this.processQueue();
+        }
       }, timeoutDuration);
 
       let callbackFired = false;
@@ -475,7 +596,8 @@ export class AudioService {
         if (callbackFired) return;
         callbackFired = true;
         
-        console.log('✅ Speech completed');
+        const duration = Date.now() - this.speechStartTime;
+        console.log(`✅ Speech completed in ${duration}ms`);
         this.clearSpeechTimeout();
         this.isSpeaking = false;
         this.currentUtterance = null;
@@ -483,21 +605,27 @@ export class AudioService {
         this.processQueue();
       };
 
-      // Handle errors with Chrome-specific handling
+      // Handle errors
       utterance.onerror = (event) => {
         if (callbackFired) return;
         callbackFired = true;
         
-        console.error('❌ Speech error:', event.error, event);
+        console.error('❌ Speech error:', event.error, 'at time:', event.elapsedTime);
         this.clearSpeechTimeout();
         this.isSpeaking = false;
         this.currentUtterance = null;
         
-        // Handle Chrome-specific autoplay policy errors
+        // Handle specific Chrome errors
         if (event.error === 'not-allowed') {
-          reject(new Error('Audio blocked by browser autoplay policy - user interaction required'));
-        } else if (event.error === 'interrupted') {
-          reject(new Error('Speech was interrupted'));
+          reject(new Error('Audio blocked by browser - user interaction required'));
+        } else if (event.error === 'canceled' || event.error === 'interrupted') {
+          // This is often normal, don't treat as error
+          console.log('🔄 Speech was interrupted/canceled');
+          resolve();
+        } else if (event.error === 'audio-busy') {
+          // Chrome-specific: Audio system is busy
+          console.log('🔄 Audio busy, will retry');
+          resolve();
         } else {
           reject(new Error(`Speech synthesis failed: ${event.error}`));
         }
@@ -505,35 +633,67 @@ export class AudioService {
         this.processQueue();
       };
 
-      // Handle interruption
+      // Handle start
       utterance.onstart = () => {
         console.log('🎤 Speech started');
       };
 
+      // Additional event handlers for debugging
+      utterance.onpause = () => {
+        console.log('⏸️ Speech paused');
+      };
+
+      utterance.onresume = () => {
+        console.log('▶️ Speech resumed');
+      };
+
       this.currentUtterance = utterance;
       
-      // Check if speechSynthesis is available before speaking
-      if (!this.speechSynthesis) {
-        console.error('❌ speechSynthesis not available at speech time');
-        this.clearSpeechTimeout();
-        this.isSpeaking = false;
-        reject(new Error('speechSynthesis not available in this environment'));
-        this.processQueue();
-        return;
-      }
-      
-      // Check if speechSynthesis has speak method
-      if (typeof this.speechSynthesis.speak !== 'function') {
-        console.error('❌ speechSynthesis.speak is not a function');
-        this.clearSpeechTimeout();
-        this.isSpeaking = false;
-        reject(new Error('speechSynthesis.speak method not available'));
-        this.processQueue();
-        return;
-      }
-
+      // Speak!
       console.log('🚀 Calling speechSynthesis.speak()...');
       this.speechSynthesis.speak(utterance);
+      
+      // Chrome-specific: Monitor speech state to catch stuck conditions
+      let checkAttempts = 0;
+      const maxCheckAttempts = 30; // 3 seconds worth of checks
+      
+      const monitorSpeech = () => {
+        checkAttempts++;
+        
+        if (callbackFired) {
+          return; // Speech completed normally
+        }
+        
+        if (checkAttempts >= maxCheckAttempts) {
+          if (!this.speechSynthesis.speaking && !this.speechSynthesis.pending) {
+            console.warn('⚠️ Speech appears stuck - forcing completion');
+            if (!callbackFired) {
+              callbackFired = true;
+              this.clearSpeechTimeout();
+              this.isSpeaking = false;
+              this.currentUtterance = null;
+              resolve(); // Treat as successful completion
+              this.processQueue();
+            }
+          }
+          return;
+        }
+        
+        // Log state every 10 checks (1 second)
+        if (checkAttempts % 10 === 0) {
+          console.log('🔍 Speech monitor state:', {
+            speaking: this.speechSynthesis.speaking,
+            pending: this.speechSynthesis.pending,
+            paused: this.speechSynthesis.paused,
+            attempts: checkAttempts
+          });
+        }
+        
+        setTimeout(monitorSpeech, 100);
+      };
+      
+      // Start monitoring after a brief delay
+      setTimeout(monitorSpeech, 200);
 
     } catch (error) {
       console.error('❌ Exception in performSpeech:', error);
@@ -549,7 +709,11 @@ export class AudioService {
     if (this.speechQueue.length === 0 || this.isSpeaking) return;
 
     const { text, options, resolve, reject } = this.speechQueue.shift()!;
-    this.performSpeech(text, options, resolve, reject);
+    
+    // Small delay to ensure Chrome is ready
+    setTimeout(() => {
+      this.performSpeech(text, options, resolve, reject);
+    }, 50);
   }
 }
 

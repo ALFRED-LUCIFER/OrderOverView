@@ -74,6 +74,7 @@ export class NaturalConversationService {
 
     // Detect user intent and emotion
     const intent = await this.detectIntent(transcript, state.conversationContext);
+    console.log(`🎯 LISA detected intent:`, intent);
     
     // Generate natural response based on intent
     const response = await this.generateNaturalResponse(
@@ -82,6 +83,7 @@ export class NaturalConversationService {
       intent,
       sessionId
     );
+    console.log(`🎤 LISA generated response:`, { text: response.text, action: response.action });
 
     // Update conversation context
     state.conversationContext.push(`Assistant: ${response.text}`);
@@ -90,9 +92,17 @@ export class NaturalConversationService {
 
     // Execute any business actions
     if (response.action) {
+      console.log(`🚀 LISA executing action: "${response.action}"`);
       const actionResult = await this.executeAction(response.action, intent.parameters, sessionId);
       if (actionResult) {
+        console.log(`✅ LISA action result:`, { 
+          hasOrders: !!actionResult.orders, 
+          orderCount: actionResult.orders?.length || 0,
+          totalCost: actionResult.totalCost 
+        });
         response.data = actionResult;
+      } else {
+        console.log(`❌ LISA action returned no result`);
       }
     }
 
@@ -184,7 +194,10 @@ Respond in JSON format only.`;
   private fallbackIntentDetection(transcript: string): string {
     const lower = transcript.toLowerCase();
     if (lower.includes('order') && (lower.includes('create') || lower.includes('new'))) return 'create_order';
-    if (lower.includes('search') || lower.includes('find')) return 'search_orders';
+    if (lower.includes('search') || lower.includes('find') || lower.includes('show') || 
+        lower.includes('list') || lower.includes('get') || lower.includes('expensive') ||
+        lower.includes('top') || lower.includes('most') || lower.includes('costly') ||
+        lower.includes('highest') || lower.includes('biggest')) return 'search_orders';
     if (lower.includes('pdf') || lower.includes('report')) return 'generate_pdf';
     if (lower.includes('help') || lower.includes('how')) return 'get_info';
     
@@ -345,16 +358,21 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
 
   private async executeAction(action: string, parameters: any, sessionId: string): Promise<any> {
     try {
+      console.log(`🎯 LISA executing action: "${action}" with parameters:`, parameters);
+      
       switch (action) {
         case 'search_orders':
+        case 'search_results':  // Handle both action names
           return await this.searchOrders(parameters);
         case 'create_order':
+        case 'order_created':   // Handle both action names
           return await this.createOrder(parameters);
         case 'generate_pdf':
           return await this.generatePdf(parameters);
         case 'end_conversation':
           return await this.endConversation(sessionId);
         default:
+          console.log(`⚠️ LISA: Unknown action "${action}" - no handler found`);
           return null;
       }
     } catch (error) {
@@ -369,77 +387,177 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
         console.log('🗣️  LISA: Searching orders via database...', parameters);
         
         const orders = await this.ordersService.findAll();
-        const filteredOrders = orders.slice(0, 10); // Return top 10 for conversation
-        const totalCost = filteredOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
         
-        console.log('✅ LISA: Orders found in database!', { 
-          count: filteredOrders.length,
+        // Sort by totalPrice descending (most expensive first) and take top 10
+        const sortedOrders = orders
+          .sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0))
+          .slice(0, 10);
+        
+        const totalCost = sortedOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+        
+        console.log('✅ LISA: Top expensive orders found in database!', { 
+          count: sortedOrders.length,
           totalCost,
+          highestOrder: sortedOrders[0]?.totalPrice || 0,
           statusCode: 200
         });
         
         return {
-          orders: filteredOrders,
+          orders: sortedOrders,
           totalCost,
-          count: filteredOrders.length,
+          count: sortedOrders.length,
           statusCode: 200,
-          message: 'Orders retrieved successfully from database'
+          message: 'Top expensive orders retrieved successfully from database'
         };
       }
     } catch (error) {
       console.error('❌ LISA: Database search failed:', error.message);
     }
     
-    console.log('📝 LISA: Using demo data for orders search');
+    console.log('📝 LISA: Using demo data for top expensive orders search');
     
-    // Return mock data for demo with proper structure
+    // Return mock data with expensive orders sorted by price (highest first)
     const mockOrders = [
       { 
         id: '1', 
-        orderNumber: 'ORD-001', 
-        customer: { name: 'Acme Glass Co' },
-        customerName: 'Acme Glass Co',
-        glassType: 'Tempered',
-        quantity: 5,
-        width: 120,
-        height: 80,
-        cost: 450.00,
-        status: 'PENDING' 
+        orderNumber: 'EXP-9001', 
+        customer: { name: 'Luxury Towers Corp' },
+        customerName: 'Luxury Towers Corp',
+        glassType: 'Bulletproof',
+        quantity: 25,
+        width: 3000,
+        height: 4000,
+        cost: 30000.00,
+        totalPrice: 30000.00,
+        status: 'CONFIRMED' 
       },
       { 
         id: '2', 
-        orderNumber: 'ORD-002', 
-        customer: { name: 'Glass Solutions Ltd' },
-        customerName: 'Glass Solutions Ltd',
-        glassType: 'Laminated',
-        quantity: 3,
-        width: 100,
-        height: 60,
-        cost: 320.00,
-        status: 'DELIVERED' 
+        orderNumber: 'EXP-9002', 
+        customer: { name: 'Pentagon Security Solutions' },
+        customerName: 'Pentagon Security Solutions',
+        glassType: 'Fire-Rated Bulletproof',
+        quantity: 50,
+        width: 2500,
+        height: 3500,
+        cost: 25000.00,
+        totalPrice: 25000.00,
+        status: 'IN_PRODUCTION' 
       },
       { 
         id: '3', 
-        orderNumber: 'ORD-003', 
-        customer: { name: 'Modern Windows Inc' },
-        customerName: 'Modern Windows Inc',
-        glassType: 'Clear',
-        quantity: 8,
-        width: 150,
-        height: 90,
-        cost: 680.00,
+        orderNumber: 'EXP-9003', 
+        customer: { name: 'Royal Hotel Chain' },
+        customerName: 'Royal Hotel Chain',
+        glassType: 'Triple-Glazed Laminated',
+        quantity: 35,
+        width: 2000,
+        height: 3000,
+        cost: 22750.00,
+        totalPrice: 22750.00,
+        status: 'PENDING' 
+      },
+      { 
+        id: '4', 
+        orderNumber: 'EXP-9004', 
+        customer: { name: 'Luxury Towers Corp' },
+        customerName: 'Luxury Towers Corp',
+        glassType: 'Acoustic Insulated',
+        quantity: 60,
+        width: 1800,
+        height: 2800,
+        cost: 18500.00,
+        totalPrice: 18500.00,
+        status: 'READY_FOR_DELIVERY' 
+      },
+      { 
+        id: '5', 
+        orderNumber: 'EXP-9005', 
+        customer: { name: 'Corporate Plaza Inc' },
+        customerName: 'Corporate Plaza Inc',
+        glassType: 'Solar Control Tempered',
+        quantity: 80,
+        width: 1600,
+        height: 2400,
+        cost: 15600.00,
+        totalPrice: 15600.00,
+        status: 'DELIVERED' 
+      },
+      { 
+        id: '6', 
+        orderNumber: 'ORD-9006', 
+        customer: { name: 'Modern Skyscrapers LLC' },
+        customerName: 'Modern Skyscrapers LLC',
+        glassType: 'Low-E Coated',
+        quantity: 45,
+        width: 1400,
+        height: 2200,
+        cost: 12800.00,
+        totalPrice: 12800.00,
+        status: 'CONFIRMED' 
+      },
+      { 
+        id: '7', 
+        orderNumber: 'ORD-9007', 
+        customer: { name: 'Banking Tower Corp' },
+        customerName: 'Banking Tower Corp',
+        glassType: 'Reflective Tinted',
+        quantity: 65,
+        width: 1200,
+        height: 2000,
+        cost: 9750.00,
+        totalPrice: 9750.00,
         status: 'PROCESSING' 
+      },
+      { 
+        id: '8', 
+        orderNumber: 'ORD-9008', 
+        customer: { name: 'Hotel Magnifico' },
+        customerName: 'Hotel Magnifico',
+        glassType: 'Frosted Privacy',
+        quantity: 30,
+        width: 1000,
+        height: 1800,
+        cost: 7200.00,
+        totalPrice: 7200.00,
+        status: 'QUALITY_CHECK' 
+      },
+      { 
+        id: '9', 
+        orderNumber: 'ORD-9009', 
+        customer: { name: 'Office Complex Ltd' },
+        customerName: 'Office Complex Ltd',
+        glassType: 'Standard Tempered',
+        quantity: 40,
+        width: 1200,
+        height: 1600,
+        cost: 4800.00,
+        totalPrice: 4800.00,
+        status: 'PENDING' 
+      },
+      { 
+        id: '10', 
+        orderNumber: 'ORD-9010', 
+        customer: { name: 'Residential Complex' },
+        customerName: 'Residential Complex',
+        glassType: 'Double Glazed',
+        quantity: 25,
+        width: 1000,
+        height: 1400,
+        cost: 3500.00,
+        totalPrice: 3500.00,
+        status: 'DELIVERED' 
       }
     ];
     
-    const totalCost = mockOrders.reduce((sum, order) => sum + order.cost, 0);
+    const totalCost = mockOrders.reduce((sum, order) => sum + (order.cost || order.totalPrice), 0);
     
     return {
       orders: mockOrders,
       totalCost,
       count: mockOrders.length,
       statusCode: 200,
-      message: 'Orders retrieved successfully (demo mode)'
+      message: 'Top 10 most expensive orders retrieved successfully (demo mode)'
     };
   }
 

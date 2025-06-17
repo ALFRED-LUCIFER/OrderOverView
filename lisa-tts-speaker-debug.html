@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISA TTS Speaker Selection API Debug</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            border-left-color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+        }
+        .warning {
+            border-left-color: #ff9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+        button {
+            background: linear-gradient(45deg, #2196F3 30%, #64B5F6 90%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .log {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok { background-color: #4CAF50; }
+        .status-error { background-color: #f44336; }
+        .status-warning { background-color: #ff9800; }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        h2 {
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 LISA TTS Speaker Selection API Debugger</h1>
+        
+        <div class="test-section">
+            <h2><span class="status-indicator status-ok"></span>Browser Compatibility Check</h2>
+            <div id="compatibility-results"></div>
+            <button onclick="checkCompatibility()">Run Compatibility Test</button>
+        </div>
+
+        <div class="test-section">
+            <h2><span class="status-indicator status-warning"></span>Speaker Selection API Investigation</h2>
+            <div id="speaker-api-results"></div>
+            <button onclick="investigateSpeakerAPI()">Investigate Speaker Selection API</button>
+        </div>
+
+        <div class="test-section">
+            <h2><span class="status-indicator status-ok"></span>Voice Synthesis Testing</h2>
+            <div id="voice-test-results"></div>
+            <button onclick="testVoiceSynthesis()">Test Voice Synthesis</button>
+            <button onclick="testLISAVoice()">Test LISA Voice</button>
+            <button onclick="stopAllSpeech()">Stop All Speech</button>
+        </div>
+
+        <div class="test-section">
+            <h2><span class="status-indicator status-ok"></span>Chrome Audio Policy Check</h2>
+            <div id="audio-policy-results"></div>
+            <button onclick="checkAudioPolicy()">Check Audio Policy</button>
+        </div>
+
+        <div class="test-section">
+            <h2><span class="status-indicator status-ok"></span>LISA WebSocket Connection Test</h2>
+            <div id="websocket-results"></div>
+            <button onclick="testWebSocketConnection()">Test WebSocket Connection</button>
+            <button onclick="testVoiceCommand()">Send Test Voice Command</button>
+        </div>
+
+        <div class="test-section">
+            <h2><span class="status-indicator status-warning"></span>Debug Log</h2>
+            <div class="log" id="debug-log"></div>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('debug-log');
+            const prefix = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
+            logElement.textContent += `${timestamp} ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function updateResults(elementId, content) {
+            document.getElementById(elementId).innerHTML = content;
+        }
+
+        function checkCompatibility() {
+            log('Starting browser compatibility check...');
+            let results = '<div>';
+            
+            // Speech Synthesis check
+            if ('speechSynthesis' in window) {
+                results += '<p>✅ Speech Synthesis API: Available</p>';
+                log('Speech Synthesis API is available', 'success');
+            } else {
+                results += '<p>❌ Speech Synthesis API: Not Available</p>';
+                log('Speech Synthesis API is NOT available', 'error');
+            }
+
+            // Speech Recognition check
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                results += '<p>✅ Speech Recognition API: Available</p>';
+                log('Speech Recognition API is available', 'success');
+            } else {
+                results += '<p>❌ Speech Recognition API: Not Available</p>';
+                log('Speech Recognition API is NOT available', 'error');
+            }
+
+            // MediaDevices check
+            if ('mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices) {
+                results += '<p>✅ MediaDevices API: Available</p>';
+                log('MediaDevices API is available', 'success');
+            } else {
+                results += '<p>❌ MediaDevices API: Not Available</p>';
+                log('MediaDevices API is NOT available', 'error');
+            }
+
+            // WebSocket check
+            if ('WebSocket' in window) {
+                results += '<p>✅ WebSocket API: Available</p>';
+                log('WebSocket API is available', 'success');
+            } else {
+                results += '<p>❌ WebSocket API: Not Available</p>';
+                log('WebSocket API is NOT available', 'error');
+            }
+
+            // Browser info
+            const userAgent = navigator.userAgent;
+            let browser = 'Unknown';
+            if (userAgent.includes('Chrome')) browser = 'Chrome';
+            else if (userAgent.includes('Firefox')) browser = 'Firefox';
+            else if (userAgent.includes('Safari')) browser = 'Safari';
+            else if (userAgent.includes('Edge')) browser = 'Edge';
+
+            results += `<p>🌐 Browser: ${browser}</p>`;
+            results += `<p>🔒 Protocol: ${window.location.protocol}</p>`;
+            results += `<p>🏠 Host: ${window.location.hostname}</p>`;
+            
+            results += '</div>';
+            updateResults('compatibility-results', results);
+            log('Browser compatibility check completed');
+        }
+
+        function investigateSpeakerAPI() {
+            log('Investigating Speaker Selection API error...');
+            let results = '<div>';
+            
+            try {
+                // Check for Speaker Selection API
+                if ('navigator' in window && 'mediaDevices' in navigator) {
+                    if ('selectAudioOutput' in navigator.mediaDevices) {
+                        results += '<p>✅ Speaker Selection API: Available (selectAudioOutput)</p>';
+                        log('Speaker Selection API (selectAudioOutput) is available', 'success');
+                    } else {
+                        results += '<p>❌ Speaker Selection API: selectAudioOutput not found</p>';
+                        log('Speaker Selection API (selectAudioOutput) is NOT available', 'warning');
+                    }
+                } else {
+                    results += '<p>❌ MediaDevices API not available</p>';
+                    log('MediaDevices API is not available', 'error');
+                }
+
+                // Check for Audio Output Devices API
+                if ('navigator' in window && 'mediaDevices' in navigator && 'enumerateDevices' in navigator.mediaDevices) {
+                    navigator.mediaDevices.enumerateDevices()
+                        .then(devices => {
+                            const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+                            results += `<p>🔊 Audio Output Devices Found: ${audioOutputs.length}</p>`;
+                            log(`Found ${audioOutputs.length} audio output devices`, 'info');
+                            
+                            if (audioOutputs.length > 0) {
+                                results += '<p>Audio Output Devices:</p><ul>';
+                                audioOutputs.forEach((device, index) => {
+                                    results += `<li>${device.label || `Device ${index + 1}`} (${device.deviceId.substring(0, 8)}...)</li>`;
+                                });
+                                results += '</ul>';
+                            }
+                            updateResults('speaker-api-results', results + '</div>');
+                        })
+                        .catch(err => {
+                            results += `<p>❌ Error enumerating devices: ${err.message}</p>`;
+                            log(`Error enumerating devices: ${err.message}`, 'error');
+                            updateResults('speaker-api-results', results + '</div>');
+                        });
+                } else {
+                    results += '<p>❌ Device enumeration not supported</p>';
+                    log('Device enumeration is not supported', 'error');
+                }
+
+                // Check Chrome-specific features
+                if (navigator.userAgent.includes('Chrome')) {
+                    results += '<p>🔧 Chrome-specific checks:</p>';
+                    
+                    // Check for Chrome extensions API
+                    if ('chrome' in window) {
+                        results += '<p>✅ Chrome APIs available</p>';
+                        log('Chrome APIs are available', 'info');
+                    } else {
+                        results += '<p>❌ Chrome APIs not accessible</p>';
+                        log('Chrome APIs are not accessible', 'warning');
+                    }
+
+                    // Check for secure context
+                    if (window.isSecureContext) {
+                        results += '<p>✅ Secure Context: Yes</p>';
+                        log('Running in secure context', 'success');
+                    } else {
+                        results += '<p>⚠️ Secure Context: No (some APIs may be limited)</p>';
+                        log('NOT running in secure context - some APIs may be limited', 'warning');
+                    }
+                }
+
+            } catch (error) {
+                results += `<p>❌ Error during investigation: ${error.message}</p>`;
+                log(`Error during Speaker API investigation: ${error.message}`, 'error');
+            }
+            
+            if (!results.includes('updateResults')) {
+                updateResults('speaker-api-results', results + '</div>');
+            }
+        }
+
+        function testVoiceSynthesis() {
+            log('Testing voice synthesis...');
+            let results = '<div>';
+            
+            if (!('speechSynthesis' in window)) {
+                results += '<p>❌ Speech Synthesis not available</p>';
+                updateResults('voice-test-results', results + '</div>');
+                return;
+            }
+
+            try {
+                // Get voices
+                const voices = speechSynthesis.getVoices();
+                results += `<p>🎭 Available voices: ${voices.length}</p>`;
+                log(`Found ${voices.length} available voices`);
+
+                if (voices.length === 0) {
+                    results += '<p>⚠️ No voices loaded yet, trying to load...</p>';
+                    log('No voices loaded, waiting for voices changed event', 'warning');
+                    
+                    speechSynthesis.addEventListener('voiceschanged', () => {
+                        const newVoices = speechSynthesis.getVoices();
+                        log(`Voices loaded: ${newVoices.length}`, 'success');
+                        testVoiceSynthesis(); // Retry
+                    });
+                } else {
+                    // Show first few voices
+                    results += '<p>Sample voices:</p><ul>';
+                    voices.slice(0, 5).forEach(voice => {
+                        results += `<li>${voice.name} (${voice.lang}) ${voice.localService ? '[Local]' : '[Remote]'}</li>`;
+                    });
+                    results += '</ul>';
+
+                    // Test basic speech
+                    const utterance = new SpeechSynthesisUtterance('Testing voice synthesis');
+                    utterance.volume = 0.5;
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+
+                    utterance.onstart = () => {
+                        log('Voice synthesis test started', 'success');
+                        results += '<p>✅ Speech synthesis test started successfully</p>';
+                        updateResults('voice-test-results', results + '</div>');
+                    };
+
+                    utterance.onend = () => {
+                        log('Voice synthesis test completed', 'success');
+                    };
+
+                    utterance.onerror = (event) => {
+                        log(`Voice synthesis error: ${event.error}`, 'error');
+                        results += `<p>❌ Speech synthesis error: ${event.error}</p>`;
+                        updateResults('voice-test-results', results + '</div>');
+                    };
+
+                    speechSynthesis.speak(utterance);
+                    results += '<p>🔊 Voice synthesis test initiated...</p>';
+                }
+            } catch (error) {
+                results += `<p>❌ Error testing voice synthesis: ${error.message}</p>`;
+                log(`Error testing voice synthesis: ${error.message}`, 'error');
+            }
+
+            updateResults('voice-test-results', results + '</div>');
+        }
+
+        function testLISAVoice() {
+            log('Testing LISA voice configuration...');
+            
+            if (!('speechSynthesis' in window)) {
+                log('Speech Synthesis not available for LISA test', 'error');
+                return;
+            }
+
+            try {
+                const voices = speechSynthesis.getVoices();
+                
+                // Find best voice for LISA (female English voices)
+                const preferredVoice = voices.find(voice => 
+                    voice.lang.startsWith('en') && 
+                    (voice.name.toLowerCase().includes('female') ||
+                     voice.name.toLowerCase().includes('samantha') ||
+                     voice.name.toLowerCase().includes('karen') ||
+                     voice.name.toLowerCase().includes('moira'))
+                ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+
+                if (preferredVoice) {
+                    log(`LISA using voice: ${preferredVoice.name} (${preferredVoice.lang})`, 'info');
+                    
+                    const utterance = new SpeechSynthesisUtterance(
+                        'Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.'
+                    );
+                    
+                    utterance.voice = preferredVoice;
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.0;
+                    utterance.volume = 0.8;
+
+                    utterance.onstart = () => {
+                        log('LISA voice test started successfully', 'success');
+                    };
+
+                    utterance.onend = () => {
+                        log('LISA voice test completed successfully', 'success');
+                    };
+
+                    utterance.onerror = (event) => {
+                        log(`LISA voice test error: ${event.error}`, 'error');
+                    };
+
+                    speechSynthesis.speak(utterance);
+                } else {
+                    log('No suitable voice found for LISA', 'warning');
+                }
+            } catch (error) {
+                log(`Error testing LISA voice: ${error.message}`, 'error');
+            }
+        }
+
+        function stopAllSpeech() {
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+                log('All speech synthesis stopped', 'info');
+            }
+        }
+
+        function checkAudioPolicy() {
+            log('Checking Chrome audio policy...');
+            let results = '<div>';
+
+            try {
+                // Check autoplay policy
+                if ('navigator' in window && 'userActivation' in navigator) {
+                    const isActive = navigator.userActivation.isActive;
+                    const hasBeenActive = navigator.userActivation.hasBeenActive;
+                    
+                    results += `<p>🎮 User Activation Active: ${isActive ? 'Yes' : 'No'}</p>`;
+                    results += `<p>🎮 User Has Been Active: ${hasBeenActive ? 'Yes' : 'No'}</p>`;
+                    
+                    log(`User activation - Active: ${isActive}, Has been active: ${hasBeenActive}`, 'info');
+                } else {
+                    results += '<p>⚠️ User Activation API not available</p>';
+                    log('User Activation API not available', 'warning');
+                }
+
+                // Check document interaction
+                results += `<p>🖱️ Document Interaction: ${document.hasFocus() ? 'Yes' : 'No'}</p>`;
+                results += `<p>👁️ Page Visibility: ${document.visibilityState}</p>`;
+                
+                // Check protocol
+                const isHTTPS = window.location.protocol === 'https:';
+                results += `<p>🔒 HTTPS: ${isHTTPS ? 'Yes' : 'No'}</p>`;
+                
+                if (!isHTTPS && window.location.hostname !== 'localhost') {
+                    results += '<p>⚠️ Some features may be limited without HTTPS</p>';
+                    log('Not using HTTPS - some features may be limited', 'warning');
+                }
+
+                // Test audio context
+                if ('AudioContext' in window || 'webkitAudioContext' in window) {
+                    try {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        const audioContext = new AudioCtx();
+                        
+                        results += `<p>🎵 Audio Context State: ${audioContext.state}</p>`;
+                        log(`Audio Context state: ${audioContext.state}`, 'info');
+                        
+                        if (audioContext.state === 'suspended') {
+                            results += '<p>⚠️ Audio Context is suspended - user interaction may be required</p>';
+                            log('Audio Context is suspended - user interaction required', 'warning');
+                        }
+                        
+                        audioContext.close();
+                    } catch (error) {
+                        results += `<p>❌ Audio Context error: ${error.message}</p>`;
+                        log(`Audio Context error: ${error.message}`, 'error');
+                    }
+                } else {
+                    results += '<p>❌ Audio Context not available</p>';
+                    log('Audio Context not available', 'error');
+                }
+
+            } catch (error) {
+                results += `<p>❌ Error checking audio policy: ${error.message}</p>`;
+                log(`Error checking audio policy: ${error.message}`, 'error');
+            }
+
+            results += '</div>';
+            updateResults('audio-policy-results', results);
+        }
+
+        function testWebSocketConnection() {
+            log('Testing WebSocket connection to LISA backend...');
+            let results = '<div>';
+
+            try {
+                const wsUrl = 'ws://localhost:3001';
+                log(`Attempting to connect to: ${wsUrl}`, 'info');
+                
+                socket = new WebSocket(wsUrl);
+                
+                results += `<p>🔌 Connecting to: ${wsUrl}</p>`;
+                
+                socket.onopen = () => {
+                    log('WebSocket connection opened successfully', 'success');
+                    results += '<p>✅ WebSocket connection established</p>';
+                    updateResults('websocket-results', results + '</div>');
+                };
+                
+                socket.onmessage = (event) => {
+                    log(`WebSocket message received: ${event.data}`, 'info');
+                    results += `<p>📥 Message received: ${event.data}</p>`;
+                    updateResults('websocket-results', results + '</div>');
+                };
+                
+                socket.onclose = (event) => {
+                    log(`WebSocket connection closed: ${event.code} - ${event.reason}`, 'warning');
+                    results += `<p>🔌 Connection closed: ${event.code} - ${event.reason}</p>`;
+                    updateResults('websocket-results', results + '</div>');
+                };
+                
+                socket.onerror = (error) => {
+                    log('WebSocket connection error', 'error');
+                    results += '<p>❌ WebSocket connection failed</p>';
+                    updateResults('websocket-results', results + '</div>');
+                };
+                
+                // Set timeout
+                setTimeout(() => {
+                    if (socket.readyState === WebSocket.CONNECTING) {
+                        log('WebSocket connection timeout', 'error');
+                        results += '<p>⏰ Connection timeout</p>';
+                        updateResults('websocket-results', results + '</div>');
+                        socket.close();
+                    }
+                }, 5000);
+                
+            } catch (error) {
+                results += `<p>❌ Error creating WebSocket: ${error.message}</p>`;
+                log(`Error creating WebSocket: ${error.message}`, 'error');
+                updateResults('websocket-results', results + '</div>');
+            }
+        }
+
+        function testVoiceCommand() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected - connect first', 'error');
+                return;
+            }
+
+            log('Sending test voice command to LISA...', 'info');
+            
+            const testCommand = {
+                transcript: 'Hello LISA, this is a test command',
+                isEndOfSpeech: true,
+                interimResults: false,
+                useNaturalConversation: true
+            };
+            
+            socket.send(JSON.stringify({
+                event: 'voice-command',
+                data: testCommand
+            }));
+            
+            log('Test voice command sent', 'success');
+        }
+
+        function clearLog() {
+            document.getElementById('debug-log').textContent = '';
+            log('Debug log cleared');
+        }
+
+        // Auto-run compatibility check on page load
+        window.addEventListener('load', () => {
+            log('LISA TTS Debugger loaded');
+            checkCompatibility();
+        });
+    </script>
+</body>
+</html>

@@ -27,8 +27,9 @@ import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
-import VoiceInterface from './components/VoiceInterface';
+import LISAInterface from './components/LISAInterface';
 import ErrorBoundary from './components/ErrorBoundary';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 const drawerWidth = 280;
 
@@ -116,18 +117,19 @@ function App() {
   );
 
   return (
-    <Box sx={{ display: 'flex' }}>
-      <CssBaseline />
-      
-      {/* AppBar */}
-      <AppBar
-        position="fixed"
-        sx={{
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` },
-          bgcolor: 'primary.main',
-        }}
-      >
+    <NotificationProvider>
+      <Box sx={{ display: 'flex' }}>
+        <CssBaseline />
+        
+        {/* AppBar */}
+        <AppBar
+          position="fixed"
+          sx={{
+            width: { md: `calc(100% - ${drawerWidth}px)` },
+            ml: { md: `${drawerWidth}px` },
+            bgcolor: 'primary.main',
+          }}
+        >
         <Toolbar>
           <IconButton
             color="inherit"
@@ -204,9 +206,10 @@ function App() {
         </ErrorBoundary>
       </Box>
 
-      {/* Voice Interface - Fixed position overlay */}
-      <VoiceInterface />
+      {/* LISA Voice Interface - Fixed position overlay */}
+      <LISAInterface />
     </Box>
+  </NotificationProvider>
   );
 }
 

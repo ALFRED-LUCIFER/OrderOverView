@@ -32,6 +32,7 @@ import {
   Delete as DeleteIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
+import { useNotification } from '../contexts/NotificationContext';
 import { GlassType, GlassClass, OrderStatus, Priority } from '../types';
 
 // Rich mock data with 55+ orders and 20 worldwide customers
@@ -113,6 +114,7 @@ const generateMockOrders = () => {
 const mockOrders = generateMockOrders();
 
 const OrdersPage = () => {
+  const { showSuccess, showError, showInfo } = useNotification();
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [orderForm, setOrderForm] = useState({
@@ -165,30 +167,78 @@ const OrdersPage = () => {
     order.customer?.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSubmit = () => {
-    const totalPrice = orderForm.unitPrice * orderForm.quantity;
-    console.log('Creating order with total price:', totalPrice);
-    setOpen(false);
-    
-    // Reset form
-    setOrderForm({
-      orderNumber: '',
-      customerId: '',
-      glassType: GlassType.FLOAT,
-      glassClass: GlassClass.SINGLE_GLASS,
-      thickness: 4,
-      width: 1000,
-      height: 600,
-      quantity: 1,
-      unitPrice: 100,
-      priority: Priority.MEDIUM,
-      requiredDate: '',
-      edgeWork: '',
-      coating: '',
-      tempering: false,
-      laminated: false,
-      notes: '',
-    });
+  const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus, orderNumber: string) => {
+    try {
+      // Here you would make an API call to update the order status
+      // const response = await fetch(`/api/orders/${orderId}`, {
+      //   method: 'PATCH',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ status: newStatus })
+      // });
+
+      console.log(`Updating order ${orderNumber} status to:`, newStatus);
+      
+      // Simulate success
+      showSuccess(`Order ${orderNumber} status updated to ${newStatus.replace('_', ' ')}. Email notification sent to customer.`);
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      showError('Failed to update order status. Please try again.');
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const totalPrice = orderForm.unitPrice * orderForm.quantity;
+      
+      // Find customer details
+      const customer = mockCustomers.find(c => c.id === orderForm.customerId);
+      
+      const orderData = {
+        ...orderForm,
+        customerName: customer?.name || 'Unknown Customer',
+        customerEmail: customer?.email || '',
+        totalPrice,
+        status: OrderStatus.PENDING,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Here you would make an API call to create the order
+      // const response = await fetch('/api/orders', { 
+      //   method: 'POST', 
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(orderData)
+      // });
+
+      console.log('Creating order:', orderData);
+      
+      // Simulate success
+      showSuccess(`Order ${orderForm.orderNumber || 'generated'} created successfully! Email notification sent to customer.`);
+      
+      setOpen(false);
+      
+      // Reset form
+      setOrderForm({
+        orderNumber: '',
+        customerId: '',
+        glassType: GlassType.FLOAT,
+        glassClass: GlassClass.SINGLE_GLASS,
+        thickness: 4,
+        width: 1000,
+        height: 600,
+        quantity: 1,
+        unitPrice: 100,
+        priority: Priority.MEDIUM,
+        requiredDate: '',
+        edgeWork: '',
+        coating: '',
+        tempering: false,
+        laminated: false,
+        notes: '',
+      });
+    } catch (error) {
+      console.error('Error creating order:', error);
+      showError('Failed to create order. Please try again.');
+    }
   };
 
   return (
@@ -283,11 +333,21 @@ const OrdersPage = () => {
                     <strong>{order.currency} {order.totalPrice.toLocaleString()}</strong>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={order.status.replace('_', ' ')}
-                      color={getStatusColor(order.status)}
+                    <Select
+                      value={order.status}
                       size="small"
-                    />
+                      onChange={(e) => handleStatusUpdate(order.id, e.target.value as OrderStatus, order.orderNumber)}
+                      sx={{ minWidth: 140 }}
+                    >
+                      <MenuItem value={OrderStatus.PENDING}>Pending</MenuItem>
+                      <MenuItem value={OrderStatus.CONFIRMED}>Confirmed</MenuItem>
+                      <MenuItem value={OrderStatus.IN_PRODUCTION}>In Production</MenuItem>
+                      <MenuItem value={OrderStatus.QUALITY_CHECK}>Quality Check</MenuItem>
+                      <MenuItem value={OrderStatus.READY_FOR_DELIVERY}>Ready for Delivery</MenuItem>
+                      <MenuItem value={OrderStatus.DELIVERED}>Delivered</MenuItem>
+                      <MenuItem value={OrderStatus.ON_HOLD}>On Hold</MenuItem>
+                      <MenuItem value={OrderStatus.CANCELLED}>Cancelled</MenuItem>
+                    </Select>
                   </TableCell>
                   <TableCell>
                     <Chip

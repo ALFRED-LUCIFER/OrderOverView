@@ -482,71 +482,127 @@ export const VoiceInterface: React.FC = () => {
   }
 
   return (
-    <Paper
-      elevation={3}
+    <Box
       sx={{
         position: 'fixed',
         bottom: 20,
         right: 20,
-        width: isExpanded ? 380 : 'auto',
-        maxHeight: isExpanded ? 500 : 'auto',
-        display: 'flex',
-        flexDirection: 'column',
         zIndex: 1000,
         transition: 'all 0.3s ease-in-out',
       }}
     >
-      {/* Header Bar */}
-      <Box 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          p: 2,
-          cursor: 'pointer',
-          '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' }
-        }}
-        onClick={toggleExpanded}
-      >
-        <SmartToyIcon sx={{ mr: 1, color: 'primary.main' }} />
-        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
-          {getStatusText()}
-        </Typography>
-        <Chip
-          label={status.toUpperCase()}
-          color={getStatusColor()}
-          size="small"
-          sx={{ mr: 1 }}
-        />
-      </Box>
+      {/* Small Circular LISA Tab */}
+      {!isExpanded && (
+        <Paper
+          elevation={6}
+          sx={{
+            width: 64,
+            height: 64,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            background: status === 'speaking' 
+              ? 'linear-gradient(45deg, #4CAF50 30%, #81C784 90%)'
+              : status === 'listening' 
+              ? 'linear-gradient(45deg, #f44336 30%, #e57373 90%)'
+              : status === 'processing'
+              ? 'linear-gradient(45deg, #ff9800 30%, #ffb74d 90%)'
+              : 'linear-gradient(45deg, #2196F3 30%, #64B5F6 90%)',
+            '&:hover': { 
+              transform: 'scale(1.1)',
+              boxShadow: 8
+            },
+            animation: status === 'speaking' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+            '@keyframes pulse': {
+              '0%': { transform: 'scale(1)' },
+              '50%': { transform: 'scale(1.05)' },
+              '100%': { transform: 'scale(1)' }
+            }
+          }}
+          onClick={toggleExpanded}
+        >
+          <VolumeUpIcon 
+            sx={{ 
+              fontSize: 28, 
+              color: 'white',
+              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+            }} 
+          />
+          
+          {/* Status indicator dot */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              backgroundColor: status === 'error' ? '#f44336' : '#4CAF50',
+              border: '2px solid white',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }}
+          />
+        </Paper>
+      )}
 
-      {/* Expandable Content */}
-      <Collapse in={isExpanded}>
-        <Box sx={{ p: 2, pt: 0 }}>
-          {/* Audio Initialization Alert for Chrome */}
-          {!audioInitialized && (
-            <Alert 
-              severity="info" 
-              sx={{ mb: 2 }}
-              action={
-                <Button 
-                  color="primary" 
-                  size="small" 
-                  onClick={async () => {
-                    const success = await initializeAudio();
-                    if (success) {
-                      setSnackbarMessage('🎤 Audio enabled! You can now use voice commands.');
-                      setSnackbarOpen(true);
-                    }
-                  }}
-                  variant="contained"
-                >
-                  Enable Audio
-                </Button>
-              }
-            >
-              Click "Enable Audio" to activate LISA's voice responses in Chrome
-            </Alert>
-          )}
+      {/* Expanded Interface */}
+      {isExpanded && (
+        <Paper
+          elevation={8}
+          sx={{
+            width: 380,
+            maxHeight: 500,
+            borderRadius: 2,
+            overflow: 'hidden',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white'
+          }}
+        >
+          {/* Header Bar */}
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 2,
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(10px)',
+              cursor: 'pointer',
+              '&:hover': { background: 'rgba(255,255,255,0.15)' }
+            }}
+            onClick={toggleExpanded}
+          >
+            <VolumeUpIcon sx={{ mr: 1 }} />
+            <Typography variant="subtitle1" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+              LISA - Voice Assistant
+            </Typography>
+            <Chip
+              label={status.toUpperCase()}
+              size="small"
+              sx={{ 
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                fontWeight: 'bold'
+              }}
+            />
+          </Box>          {/* Main Content */}
+          <Box sx={{ p: 3, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            {/* Error Alert */}
+            {error && (
+              <Alert 
+                severity="error" 
+                sx={{ 
+                  mb: 2, 
+                  backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                  color: 'white',
+                  '& .MuiAlert-icon': { color: '#ff6b6b' }
+                }}
+              >
+                {error}
+              </Alert>
+            )}
 
           {/* Error Alert */}
           {error && (
