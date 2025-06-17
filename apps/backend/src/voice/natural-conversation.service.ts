@@ -93,7 +93,9 @@ export class NaturalConversationService {
     // Execute any business actions
     if (response.action) {
       console.log(`🚀 LISA executing action: "${response.action}"`);
-      const actionResult = await this.executeAction(response.action, intent.parameters, sessionId);
+      // Add original transcript to parameters for intelligent filtering
+      const enhancedParameters = { ...intent.parameters, originalTranscript: transcript };
+      const actionResult = await this.executeAction(response.action, enhancedParameters, sessionId);
       if (actionResult) {
         console.log(`✅ LISA action result:`, { 
           hasOrders: !!actionResult.orders, 
@@ -195,9 +197,18 @@ Respond in JSON format only.`;
     const lower = transcript.toLowerCase();
     if (lower.includes('order') && (lower.includes('create') || lower.includes('new'))) return 'create_order';
     if (lower.includes('search') || lower.includes('find') || lower.includes('show') || 
-        lower.includes('list') || lower.includes('get') || lower.includes('expensive') ||
-        lower.includes('top') || lower.includes('most') || lower.includes('costly') ||
-        lower.includes('highest') || lower.includes('biggest')) return 'search_orders';
+        lower.includes('list') || lower.includes('get') || lower.includes('give me') ||
+        lower.includes('expensive') || lower.includes('top') || lower.includes('most') || 
+        lower.includes('costly') || lower.includes('highest') || lower.includes('biggest') ||
+        // Status-based searches  
+        lower.includes('delivered') || lower.includes('completed') || lower.includes('pending') ||
+        lower.includes('processing') || lower.includes('cancelled') || lower.includes('shipped') ||
+        lower.includes('finished') || (lower.includes('done') && lower.includes('order')) ||
+        // Time-based searches
+        lower.includes('today') || lower.includes('yesterday') || lower.includes('week') ||
+        lower.includes('month') || lower.includes('recent') || lower.includes('latest') ||
+        // General order queries
+        (lower.includes('order') && (lower.includes('all') || lower.includes('every')))) return 'search_orders';
     if (lower.includes('pdf') || lower.includes('report')) return 'generate_pdf';
     if (lower.includes('help') || lower.includes('how')) return 'get_info';
     
@@ -382,182 +393,414 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
   }
 
   private async searchOrders(parameters: any) {
+    // Extract search criteria from the original transcript if available
+    const transcript = parameters?.originalTranscript?.toLowerCase() || '';
+    console.log('🔍 LISA: Enhanced search with transcript:', transcript);
+    
     try {
       if (this.ordersService) {
         console.log('🗣️  LISA: Searching orders via database...', parameters);
         
         const orders = await this.ordersService.findAll();
+        let filteredOrders = orders;
+        let searchDescription = 'all orders';
         
-        // Sort by totalPrice descending (most expensive first) and take top 10
-        const sortedOrders = orders
-          .sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0))
-          .slice(0, 10);
+        // Status-based filtering
+        if (transcript.includes('delivered') || transcript.includes('completed')) {
+          filteredOrders = orders.filter(order => 
+            order.status?.toLowerCase().includes('delivered') || 
+            order.status?.toLowerCase().includes('completed')
+          );
+          searchDescription = 'delivered orders';
+        }
+        else if (transcript.includes('pending') || transcript.includes('waiting')) {
+          filteredOrders = orders.filter(order => 
+            order.status?.toLowerCase().includes('pending')
+          );
+          searchDescription = 'pending orders';
+        }
+        else if (transcript.includes('processing') || transcript.includes('production')) {
+          filteredOrders = orders.filter(order => 
+            order.status?.toLowerCase().includes('production') ||
+            order.status?.toLowerCase().includes('processing')
+          );
+          searchDescription = 'orders in production';
+        }
+        else if (transcript.includes('cancelled') || transcript.includes('canceled')) {
+          filteredOrders = orders.filter(order => 
+            order.status?.toLowerCase().includes('cancelled')
+          );
+          searchDescription = 'cancelled orders';
+        }
+        else if (transcript.includes('confirmed')) {
+          filteredOrders = orders.filter(order => 
+            order.status?.toLowerCase().includes('confirmed')
+          );
+          searchDescription = 'confirmed orders';
+        }
         
-        const totalCost = sortedOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+        // Price/Value-based filtering
+        else if (transcript.includes('expensive') || transcript.includes('high value') || 
+                 transcript.includes('costly') || transcript.includes('biggest')) {
+          filteredOrders = orders.sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+          searchDescription = 'most expensive orders';
+        }
+        else if (transcript.includes('cheap') || transcript.includes('low cost') || 
+                 transcript.includes('affordable') || transcript.includes('budget')) {
+          filteredOrders = orders.sort((a, b) => (a.totalPrice || 0) - (b.totalPrice || 0));
+          searchDescription = 'lowest cost orders';
+        }
         
-        console.log('✅ LISA: Top expensive orders found in database!', { 
-          count: sortedOrders.length,
+        // Amount/Value thresholds
+        const amountMatch = transcript.match(/(?:above|over|more than|greater than)\s*[$]?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+        if (amountMatch) {
+          const threshold = parseFloat(amountMatch[1].replace(/,/g, ''));
+          filteredOrders = orders.filter(order => (order.totalPrice || 0) > threshold);
+          searchDescription = `orders above $${threshold.toLocaleString()}`;
+        }
+        
+        const belowMatch = transcript.match(/(?:below|under|less than)\s*[$]?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+        if (belowMatch) {
+          const threshold = parseFloat(belowMatch[1].replace(/,/g, ''));
+          filteredOrders = orders.filter(order => (order.totalPrice || 0) < threshold);
+          searchDescription = `orders below $${threshold.toLocaleString()}`;
+        }
+        
+        // Glass type filtering
+        else if (transcript.includes('tempered')) {
+          filteredOrders = orders.filter(order => 
+            order.glassType?.toLowerCase().includes('tempered')
+          );
+          searchDescription = 'tempered glass orders';
+        }
+        else if (transcript.includes('laminated')) {
+          filteredOrders = orders.filter(order => 
+            order.glassType?.toLowerCase().includes('laminated')
+          );
+          searchDescription = 'laminated glass orders';
+        }
+        else if (transcript.includes('bulletproof') || transcript.includes('security')) {
+          filteredOrders = orders.filter(order => 
+            order.glassType?.toLowerCase().includes('bulletproof')
+          );
+          searchDescription = 'bulletproof glass orders';
+        }
+        
+        // Priority filtering
+        else if (transcript.includes('urgent') || transcript.includes('priority')) {
+          filteredOrders = orders.filter(order => 
+            order.priority?.toLowerCase().includes('urgent') ||
+            order.priority?.toLowerCase().includes('high')
+          );
+          searchDescription = 'urgent priority orders';
+        }
+        
+        // Time-based filtering
+        else if (transcript.includes('today')) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          filteredOrders = orders.filter(order => {
+            const orderDate = new Date(order.createdAt);
+            orderDate.setHours(0, 0, 0, 0);
+            return orderDate.getTime() === today.getTime();
+          });
+          searchDescription = "today's orders";
+        }
+        else if (transcript.includes('this week') || transcript.includes('week')) {
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          filteredOrders = orders.filter(order => 
+            new Date(order.createdAt) >= weekAgo
+          );
+          searchDescription = 'orders from this week';
+        }
+        else if (transcript.includes('this month') || transcript.includes('month')) {
+          const monthAgo = new Date();
+          monthAgo.setMonth(monthAgo.getMonth() - 1);
+          filteredOrders = orders.filter(order => 
+            new Date(order.createdAt) >= monthAgo
+          );
+          searchDescription = 'orders from this month';
+        }
+        
+        // Customer-based filtering
+        const customerMatch = transcript.match(/(?:customer|client|for)\s+([a-zA-Z\s]+)/);
+        if (customerMatch) {
+          const customerName = customerMatch[1].trim();
+          filteredOrders = orders.filter(order => 
+            order.customer?.name?.toLowerCase().includes(customerName.toLowerCase())
+          );
+          searchDescription = `orders for customer ${customerName}`;
+        }
+        
+        // Quantity-based filtering
+        const quantityMatch = transcript.match(/(?:quantity|amount|pieces?)\s*(?:above|over|more than)\s*(\d+)/);
+        if (quantityMatch) {
+          const threshold = parseInt(quantityMatch[1]);
+          filteredOrders = orders.filter(order => (order.quantity || 0) > threshold);
+          searchDescription = `orders with quantity above ${threshold}`;
+        }
+        
+        // Default to most expensive if no specific filter
+        if (searchDescription === 'all orders' && 
+            (transcript.includes('show') || transcript.includes('list') || transcript.includes('find'))) {
+          filteredOrders = orders.sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+          searchDescription = 'orders (sorted by value)';
+        }
+        
+        // Limit results to top 15
+        filteredOrders = filteredOrders.slice(0, 15);
+        const totalCost = filteredOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+        
+        console.log('✅ LISA: Search results from database!', { 
+          count: filteredOrders.length,
           totalCost,
-          highestOrder: sortedOrders[0]?.totalPrice || 0,
+          searchType: searchDescription,
           statusCode: 200
         });
         
         return {
-          orders: sortedOrders,
+          orders: filteredOrders,
           totalCost,
-          count: sortedOrders.length,
+          count: filteredOrders.length,
           statusCode: 200,
-          message: 'Top expensive orders retrieved successfully from database'
+          message: `Found ${filteredOrders.length} ${searchDescription}`,
+          searchType: searchDescription
         };
       }
     } catch (error) {
       console.error('❌ LISA: Database search failed:', error.message);
     }
     
-    console.log('📝 LISA: Using demo data for top expensive orders search');
+    console.log('📝 LISA: Using enhanced demo data for search');
     
-    // Return mock data with expensive orders sorted by price (highest first)
+    // Enhanced mock data with various statuses and comprehensive examples
     const mockOrders = [
       { 
         id: '1', 
         orderNumber: 'EXP-9001', 
         customer: { name: 'Luxury Towers Corp' },
         customerName: 'Luxury Towers Corp',
-        glassType: 'Bulletproof',
+        glassType: 'BULLETPROOF',
+        glassClass: 'SAFETY_GLASS',
         quantity: 25,
         width: 3000,
         height: 4000,
-        cost: 30000.00,
+        unitPrice: 1200.00,
         totalPrice: 30000.00,
-        status: 'CONFIRMED' 
+        status: 'DELIVERED',
+        priority: 'HIGH',
+        createdAt: new Date('2024-12-15')
       },
       { 
         id: '2', 
         orderNumber: 'EXP-9002', 
         customer: { name: 'Pentagon Security Solutions' },
         customerName: 'Pentagon Security Solutions',
-        glassType: 'Fire-Rated Bulletproof',
+        glassType: 'BULLETPROOF',
+        glassClass: 'FIRE_RATED',
         quantity: 50,
         width: 2500,
         height: 3500,
-        cost: 25000.00,
+        unitPrice: 500.00,
         totalPrice: 25000.00,
-        status: 'IN_PRODUCTION' 
+        status: 'DELIVERED',
+        priority: 'URGENT',
+        createdAt: new Date('2024-12-10')
       },
       { 
         id: '3', 
         orderNumber: 'EXP-9003', 
         customer: { name: 'Royal Hotel Chain' },
         customerName: 'Royal Hotel Chain',
-        glassType: 'Triple-Glazed Laminated',
+        glassType: 'LAMINATED',
+        glassClass: 'TRIPLE_GLAZED',
         quantity: 35,
         width: 2000,
         height: 3000,
-        cost: 22750.00,
+        unitPrice: 650.00,
         totalPrice: 22750.00,
-        status: 'PENDING' 
+        status: 'DELIVERED',
+        priority: 'HIGH',
+        createdAt: new Date('2024-12-08')
       },
       { 
         id: '4', 
-        orderNumber: 'EXP-9004', 
-        customer: { name: 'Luxury Towers Corp' },
-        customerName: 'Luxury Towers Corp',
-        glassType: 'Acoustic Insulated',
+        orderNumber: 'DEL-9004', 
+        customer: { name: 'Metropolitan Hospital' },
+        customerName: 'Metropolitan Hospital',
+        glassType: 'TEMPERED',
+        glassClass: 'SAFETY_GLASS',
         quantity: 60,
         width: 1800,
         height: 2800,
-        cost: 18500.00,
+        unitPrice: 308.33,
         totalPrice: 18500.00,
-        status: 'READY_FOR_DELIVERY' 
+        status: 'DELIVERED',
+        priority: 'URGENT',
+        createdAt: new Date('2024-12-05')
       },
       { 
         id: '5', 
-        orderNumber: 'EXP-9005', 
+        orderNumber: 'PEND-9005', 
         customer: { name: 'Corporate Plaza Inc' },
         customerName: 'Corporate Plaza Inc',
-        glassType: 'Solar Control Tempered',
+        glassType: 'LOW_E',
+        glassClass: 'SOLAR_CONTROL',
         quantity: 80,
         width: 1600,
         height: 2400,
-        cost: 15600.00,
+        unitPrice: 195.00,
         totalPrice: 15600.00,
-        status: 'DELIVERED' 
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        createdAt: new Date()
       },
       { 
         id: '6', 
-        orderNumber: 'ORD-9006', 
+        orderNumber: 'PROC-9006', 
         customer: { name: 'Modern Skyscrapers LLC' },
         customerName: 'Modern Skyscrapers LLC',
-        glassType: 'Low-E Coated',
+        glassType: 'REFLECTIVE',
+        glassClass: 'DOUBLE_GLAZED',
         quantity: 45,
         width: 1400,
         height: 2200,
-        cost: 12800.00,
+        unitPrice: 284.44,
         totalPrice: 12800.00,
-        status: 'CONFIRMED' 
+        status: 'IN_PRODUCTION',
+        priority: 'MEDIUM',
+        createdAt: new Date('2024-12-12')
       },
       { 
         id: '7', 
-        orderNumber: 'ORD-9007', 
+        orderNumber: 'QUAL-9007', 
         customer: { name: 'Banking Tower Corp' },
         customerName: 'Banking Tower Corp',
-        glassType: 'Reflective Tinted',
+        glassType: 'TINTED',
+        glassClass: 'IG_CLASS',
         quantity: 65,
         width: 1200,
         height: 2000,
-        cost: 9750.00,
+        unitPrice: 150.00,
         totalPrice: 9750.00,
-        status: 'PROCESSING' 
+        status: 'QUALITY_CHECK',
+        priority: 'LOW',
+        createdAt: new Date('2024-12-14')
       },
       { 
         id: '8', 
-        orderNumber: 'ORD-9008', 
+        orderNumber: 'CANC-9008', 
         customer: { name: 'Hotel Magnifico' },
         customerName: 'Hotel Magnifico',
-        glassType: 'Frosted Privacy',
+        glassType: 'FROSTED',
+        glassClass: 'SINGLE_GLASS',
         quantity: 30,
         width: 1000,
         height: 1800,
-        cost: 7200.00,
+        unitPrice: 240.00,
         totalPrice: 7200.00,
-        status: 'QUALITY_CHECK' 
-      },
-      { 
-        id: '9', 
-        orderNumber: 'ORD-9009', 
-        customer: { name: 'Office Complex Ltd' },
-        customerName: 'Office Complex Ltd',
-        glassType: 'Standard Tempered',
-        quantity: 40,
-        width: 1200,
-        height: 1600,
-        cost: 4800.00,
-        totalPrice: 4800.00,
-        status: 'PENDING' 
-      },
-      { 
-        id: '10', 
-        orderNumber: 'ORD-9010', 
-        customer: { name: 'Residential Complex' },
-        customerName: 'Residential Complex',
-        glassType: 'Double Glazed',
-        quantity: 25,
-        width: 1000,
-        height: 1400,
-        cost: 3500.00,
-        totalPrice: 3500.00,
-        status: 'DELIVERED' 
+        status: 'CANCELLED',
+        priority: 'LOW',
+        createdAt: new Date('2024-11-28')
       }
     ];
     
-    const totalCost = mockOrders.reduce((sum, order) => sum + (order.cost || order.totalPrice), 0);
+    // Apply same intelligent filtering to mock data
+    let filteredOrders = mockOrders;
+    let searchDescription = 'all orders';
+    
+    // Status filtering
+    if (transcript.includes('delivered') || transcript.includes('completed')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.status.toLowerCase().includes('delivered')
+      );
+      searchDescription = 'delivered orders';
+    }
+    else if (transcript.includes('pending')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.status.toLowerCase().includes('pending')
+      );
+      searchDescription = 'pending orders';
+    }
+    else if (transcript.includes('processing') || transcript.includes('production')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.status.toLowerCase().includes('production')
+      );
+      searchDescription = 'orders in production';
+    }
+    else if (transcript.includes('cancelled')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.status.toLowerCase().includes('cancelled')
+      );
+      searchDescription = 'cancelled orders';
+    }
+    
+    // Price filtering
+    else if (transcript.includes('expensive') || transcript.includes('top') || 
+             transcript.includes('most') || transcript.includes('costly')) {
+      filteredOrders = mockOrders.sort((a, b) => b.totalPrice - a.totalPrice);
+      searchDescription = 'most expensive orders';
+    }
+    else if (transcript.includes('cheap') || transcript.includes('affordable')) {
+      filteredOrders = mockOrders.sort((a, b) => a.totalPrice - b.totalPrice);
+      searchDescription = 'lowest cost orders';
+    }
+    
+    // Amount thresholds
+    const amountMatch = transcript.match(/(?:above|over|more than)\s*[$]?(\d+(?:,\d{3})*)/);
+    if (amountMatch) {
+      const threshold = parseFloat(amountMatch[1].replace(/,/g, ''));
+      filteredOrders = mockOrders.filter(order => order.totalPrice > threshold);
+      searchDescription = `orders above $${threshold.toLocaleString()}`;
+    }
+    
+    const belowMatch = transcript.match(/(?:below|under|less than)\s*[$]?(\d+(?:,\d{3})*)/);
+    if (belowMatch) {
+      const threshold = parseFloat(belowMatch[1].replace(/,/g, ''));
+      filteredOrders = mockOrders.filter(order => order.totalPrice < threshold);
+      searchDescription = `orders below $${threshold.toLocaleString()}`;
+    }
+    
+    // Glass type filtering
+    else if (transcript.includes('bulletproof') || transcript.includes('security')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.glassType.toLowerCase().includes('bulletproof')
+      );
+      searchDescription = 'bulletproof glass orders';
+    }
+    else if (transcript.includes('tempered')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.glassType.toLowerCase().includes('tempered')
+      );
+      searchDescription = 'tempered glass orders';
+    }
+    
+    // Priority filtering
+    else if (transcript.includes('urgent')) {
+      filteredOrders = mockOrders.filter(order => 
+        order.priority.toLowerCase().includes('urgent')
+      );
+      searchDescription = 'urgent orders';
+    }
+    
+    // Default sorting
+    if (searchDescription === 'all orders') {
+      filteredOrders = mockOrders.sort((a, b) => b.totalPrice - a.totalPrice);
+      searchDescription = 'orders (sorted by value)';
+    }
+    
+    const totalCost = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+    
+    console.log(`✅ LISA: Filtered ${filteredOrders.length} ${searchDescription} from demo data`);
     
     return {
-      orders: mockOrders,
+      orders: filteredOrders,
       totalCost,
-      count: mockOrders.length,
+      count: filteredOrders.length,
       statusCode: 200,
-      message: 'Top 10 most expensive orders retrieved successfully (demo mode)'
+      message: `Found ${filteredOrders.length} ${searchDescription}`,
+      searchType: searchDescription
     };
   }
 
