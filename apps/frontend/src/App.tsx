@@ -22,11 +22,13 @@ import {
   People as PeopleIcon,
   Assignment as AssignmentIcon,
   Analytics as AnalyticsIcon,
+  Assessment as ReportsIcon,
 } from '@mui/icons-material';
 import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
+import ReportsPage from './pages/ReportsPage';
 import LISAInterface from './components/LISAInterface';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -37,6 +39,7 @@ const menuItems = [
   { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
   { path: '/customers', label: 'Customers', icon: <PeopleIcon /> },
   { path: '/orders', label: 'Orders', icon: <AssignmentIcon /> },
+  { path: '/reports', label: 'Reports & Analytics', icon: <ReportsIcon /> },
   { path: '/voice-test', label: 'Voice Test', icon: <AnalyticsIcon /> },
 ];
 
@@ -201,6 +204,7 @@ function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/voice-test" element={<VoiceTestPage />} />
           </Routes>
         </ErrorBoundary>

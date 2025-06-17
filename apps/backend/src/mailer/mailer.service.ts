@@ -18,7 +18,7 @@ export class MailerService {
 
   private initializeMailerSend() {
     try {
-      const apiToken = this.configService.get<string>('MAILERSEND_API_TOKEN');
+      const apiToken = this.configService.get<string>('mlsn.225b7f3b2a7bfdc14beb9934ca432fc31ee82618ed98a46e10666a020eb3637d');
       if (!apiToken) {
         this.logger.warn('MailerSend API token not configured. Email sending will be disabled.');
         return;

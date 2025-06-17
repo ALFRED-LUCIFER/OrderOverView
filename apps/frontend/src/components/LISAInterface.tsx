@@ -204,6 +204,21 @@ export const LISAInterface: React.FC = () => {
           setSnackbarMessage(`✅ Order ${data.data.orderNumber} status updated to ${data.data.newStatus}`);
           setSnackbarOpen(true);
         }
+      } else if (data.action === 'show_quarterly_report') {
+        // Navigate to reports page and open quarterly report dialog
+        window.location.href = '/reports';
+        setSnackbarMessage('📊 Opening quarterly reports dashboard...');
+        setSnackbarOpen(true);
+      } else if (data.action === 'show_customer_report_selector') {
+        // Navigate to reports page and open customer selector
+        window.location.href = '/reports';
+        setSnackbarMessage('👥 Opening customer analytics dashboard...');
+        setSnackbarOpen(true);
+      } else if (data.action === 'show_analytics_overview') {
+        // Navigate to reports page
+        window.location.href = '/reports';
+        setSnackbarMessage('📈 Opening analytics overview dashboard...');
+        setSnackbarOpen(true);
       } else if (data.action === 'end_conversation') {
         endConversation();
       }
@@ -657,6 +672,12 @@ export const LISAInterface: React.FC = () => {
               <Typography variant="caption" display="block">
                 • "Find orders for customer Smith"
               </Typography>
+              <Typography variant="caption" display="block">
+                • "Show me quarterly reports"
+              </Typography>
+              <Typography variant="caption" display="block">
+                • "Generate customer analytics"
+              </Typography>
               
               {isInConversation && (
                 <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic', color: 'yellow' }}>
@@ -674,7 +695,8 @@ export const LISAInterface: React.FC = () => {
         autoHideDuration={6000}
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
       />
       
       {/* Search Results Dialog */}

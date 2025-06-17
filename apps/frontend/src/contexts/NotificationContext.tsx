@@ -61,10 +61,14 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       maxSnack={5}
       anchorOrigin={{
         vertical: 'bottom',
-        horizontal: 'right',
+        horizontal: 'center',
       }}
       autoHideDuration={6000}
       preventDuplicate
+      classes={{
+        containerRoot: 'snackbar-container-z-index-1500'
+      }}
+      style={{ zIndex: 1500 }}
     >
       <NotificationProviderContent>
         {children}

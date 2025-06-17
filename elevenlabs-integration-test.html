@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ElevenLabs Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #cce7ff; color: #004085; border: 1px solid #b3d7ff; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .logs {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 ElevenLabs Integration Test</h1>
+        <p>This page tests the ElevenLabs API integration and voice synthesis capabilities.</p>
+        
+        <div id="status" class="status info">Ready to test ElevenLabs integration...</div>
+        
+        <div style="margin: 20px 0;">
+            <button onclick="testApiKey()">🔑 Test API Key</button>
+            <button onclick="testConnection()">🌐 Test Connection</button>
+            <button onclick="testVoices()">🎭 Get Voices</button>
+            <button onclick="testQuota()">📊 Check Quota</button>
+            <button onclick="testSimpleTTS()">🗣️ Test Simple TTS</button>
+            <button onclick="testLisaVoice()">🤖 Test LISA Voice</button>
+            <button onclick="clearLogs()">🧹 Clear Logs</button>
+        </div>
+        
+        <div class="logs" id="logs"></div>
+        
+        <h3>Configuration</h3>
+        <div id="config-info">
+            <p><strong>API Key:</strong> <span class="code" id="api-key-display">Loading...</span></p>
+            <p><strong>LISA Voice ID:</strong> <span class="code">EXAVITQu4vr4xnSDxMaL</span> (Bella)</p>
+            <p><strong>Base URL:</strong> <span class="code">https://api.elevenlabs.io/v1</span></p>
+        </div>
+        
+        <h3>Current Audio Status</h3>
+        <div id="audio-status">
+            <p><strong>Audio Context:</strong> <span id="audio-context-state">Not created</span></p>
+            <p><strong>Current Audio:</strong> <span id="current-audio-state">None</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_KEY = 'sk_1e3890ea4390a3dc3cb9ae9d32588befd0d02a65b61cb499';
+        const BASE_URL = 'https://api.elevenlabs.io/v1';
+        const LISA_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Bella voice
+        
+        let audioContext = null;
+        let currentAudio = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.style.marginBottom = '5px';
+            div.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : type === 'warning' ? '#ffc107' : '#007bff';
+            div.innerHTML = `[${timestamp}] ${message}`;
+            document.getElementById('logs').appendChild(div);
+            document.getElementById('logs').scrollTop = document.getElementById('logs').scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+            log('Logs cleared');
+        }
+        
+        function updateAudioStatus() {
+            document.getElementById('audio-context-state').textContent = 
+                audioContext ? audioContext.state : 'Not created';
+            document.getElementById('current-audio-state').textContent = 
+                currentAudio ? (currentAudio.paused ? 'Paused' : 'Playing') : 'None';
+        }
+        
+        async function initAudioContext() {
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioContext.state === 'suspended') {
+                        await audioContext.resume();
+                    }
+                    log('✅ AudioContext initialized', 'success');
+                } catch (error) {
+                    log(`❌ AudioContext initialization failed: ${error.message}`, 'error');
+                }
+            }
+            updateAudioStatus();
+        }
+        
+        async function testApiKey() {
+            log('🔑 Testing API key validity...');
+            updateStatus('Testing API key...', 'info');
+            
+            if (!API_KEY || API_KEY === 'your_elevenlabs_api_key_here') {
+                log('❌ No valid API key configured', 'error');
+                updateStatus('API key not configured', 'error');
+                return;
+            }
+            
+            log(`📝 API Key: ${API_KEY.substring(0, 20)}...`, 'info');
+            updateStatus('API key configured', 'success');
+        }
+        
+        async function testConnection() {
+            log('🌐 Testing ElevenLabs API connection...');
+            updateStatus('Testing connection...', 'info');
+            
+            try {
+                const response = await fetch(`${BASE_URL}/voices`, {
+                    headers: {
+                        'xi-api-key': API_KEY,
+                    },
+                });
+                
+                if (response.ok) {
+                    log('✅ ElevenLabs API connection successful', 'success');
+                    updateStatus('Connection successful', 'success');
+                } else {
+                    log(`❌ API connection failed: ${response.status} ${response.statusText}`, 'error');
+                    updateStatus('Connection failed', 'error');
+                }
+            } catch (error) {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                updateStatus('Connection error', 'error');
+            }
+        }
+        
+        async function testVoices() {
+            log('🎭 Fetching available voices...');
+            updateStatus('Fetching voices...', 'info');
+            
+            try {
+                const response = await fetch(`${BASE_URL}/voices`, {
+                    headers: {
+                        'xi-api-key': API_KEY,
+                    },
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                const voices = data.voices || [];
+                
+                log(`✅ Found ${voices.length} voices`, 'success');
+                
+                // Find LISA's voice
+                const lisaVoice = voices.find(v => v.voice_id === LISA_VOICE_ID);
+                if (lisaVoice) {
+                    log(`🤖 LISA voice found: ${lisaVoice.name} (${lisaVoice.category})`, 'success');
+                } else {
+                    log(`⚠️ LISA voice (${LISA_VOICE_ID}) not found in available voices`, 'warning');
+                }
+                
+                // Log first few voices
+                voices.slice(0, 5).forEach(voice => {
+                    log(`   📢 ${voice.name} (${voice.voice_id}) - ${voice.category}`, 'info');
+                });
+                
+                if (voices.length > 5) {
+                    log(`   ... and ${voices.length - 5} more voices`, 'info');
+                }
+                
+                updateStatus(`Found ${voices.length} voices`, 'success');
+            } catch (error) {
+                log(`❌ Failed to fetch voices: ${error.message}`, 'error');
+                updateStatus('Failed to fetch voices', 'error');
+            }
+        }
+        
+        async function testQuota() {
+            log('📊 Checking API quota...');
+            updateStatus('Checking quota...', 'info');
+            
+            try {
+                const response = await fetch(`${BASE_URL}/user/subscription`, {
+                    headers: {
+                        'xi-api-key': API_KEY,
+                    },
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                log('✅ Quota information retrieved', 'success');
+                log(`   💳 Tier: ${data.tier || 'Unknown'}`, 'info');
+                log(`   📈 Character count: ${data.character_count || 0}`, 'info');
+                log(`   🔢 Character limit: ${data.character_limit || 'Unknown'}`, 'info');
+                log(`   🔄 Can extend quota: ${data.can_extend_character_limit || false}`, 'info');
+                
+                updateStatus('Quota check successful', 'success');
+            } catch (error) {
+                log(`❌ Failed to check quota: ${error.message}`, 'error');
+                updateStatus('Quota check failed', 'error');
+            }
+        }
+        
+        async function testSimpleTTS() {
+            log('🗣️ Testing simple text-to-speech...');
+            updateStatus('Testing TTS...', 'info');
+            
+            await initAudioContext();
+            
+            try {
+                const text = 'Hello, this is a test of the ElevenLabs voice service.';
+                await speak(text);
+                log('✅ Simple TTS test successful', 'success');
+                updateStatus('TTS test successful', 'success');
+            } catch (error) {
+                log(`❌ TTS test failed: ${error.message}`, 'error');
+                updateStatus('TTS test failed', 'error');
+            }
+        }
+        
+        async function testLisaVoice() {
+            log('🤖 Testing LISA voice specifically...');
+            updateStatus('Testing LISA voice...', 'info');
+            
+            await initAudioContext();
+            
+            try {
+                const text = 'Hello! I am LISA, your Language Intelligence Support Assistant. I am ready to help you with your glass manufacturing orders.';
+                await speak(text);
+                log('✅ LISA voice test successful', 'success');
+                updateStatus('LISA voice test successful', 'success');
+            } catch (error) {
+                log(`❌ LISA voice test failed: ${error.message}`, 'error');
+                updateStatus('LISA voice test failed', 'error');
+            }
+        }
+        
+        async function speak(text) {
+            log(`🎤 Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`, 'info');
+            
+            const payload = {
+                text,
+                model_id: 'eleven_monolingual_v1',
+                voice_settings: {
+                    stability: 0.75,
+                    similarity_boost: 0.75,
+                    style: 0.0,
+                    use_speaker_boost: true,
+                },
+            };
+            
+            const response = await fetch(`${BASE_URL}/text-to-speech/${LISA_VOICE_ID}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'audio/mpeg',
+                    'Content-Type': 'application/json',
+                    'xi-api-key': API_KEY,
+                },
+                body: JSON.stringify(payload),
+            });
+            
+            if (!response.ok) {
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail?.message || errorData.message || errorMessage;
+                } catch {
+                    // Ignore JSON parse errors
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const audioBlob = await response.blob();
+            await playAudio(audioBlob);
+        }
+        
+        async function playAudio(audioBlob) {
+            return new Promise((resolve, reject) => {
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                currentAudio = audio;
+                updateAudioStatus();
+                
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    currentAudio = null;
+                    updateAudioStatus();
+                    log('🔊 Audio playback completed', 'success');
+                    resolve();
+                };
+                
+                audio.onerror = (error) => {
+                    URL.revokeObjectURL(audioUrl);
+                    currentAudio = null;
+                    updateAudioStatus();
+                    log('❌ Audio playback error', 'error');
+                    reject(new Error('Audio playback failed'));
+                };
+                
+                audio.oncanplaythrough = () => {
+                    log('▶️ Starting audio playback', 'info');
+                    audio.play().catch(reject);
+                };
+                
+                // Load the audio
+                audio.load();
+            });
+        }
+        
+        // Initialize page
+        window.addEventListener('load', () => {
+            document.getElementById('api-key-display').textContent = 
+                API_KEY ? `${API_KEY.substring(0, 20)}...` : 'Not configured';
+            log('🚀 ElevenLabs integration test page loaded');
+            testApiKey();
+        });
+    </script>
+</body>
+</html>

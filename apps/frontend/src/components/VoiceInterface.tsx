@@ -793,7 +793,8 @@ export const VoiceInterface: React.FC = () => {
         autoHideDuration={6000}
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
       />
       
       {/* Search Results Dialog */}

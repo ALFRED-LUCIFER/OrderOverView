@@ -157,7 +157,7 @@ Previous context:
 ${context.slice(-5).join('\n')}
 
 Extract:
-1. Primary intent (search_orders, create_order, generate_pdf, get_info, casual_conversation, complaint, end_conversation)
+1. Primary intent (search_orders, create_order, generate_pdf, generate_report, quarterly_report, customer_report, get_info, casual_conversation, complaint, end_conversation)
 2. Topic (what specifically they're asking about)
 3. Parameters (any specific values mentioned)
 4. Emotion (neutral, frustrated, excited, confused)
@@ -214,6 +214,9 @@ Respond in JSON format only.`;
         // General order queries
         (lower.includes('order') && (lower.includes('all') || lower.includes('every')))) return 'search_orders';
     if (lower.includes('pdf') || lower.includes('report')) return 'generate_pdf';
+    if (lower.includes('quarterly') || lower.includes('quarter') && lower.includes('report')) return 'quarterly_report';
+    if (lower.includes('customer') && lower.includes('report') && !lower.includes('quarterly')) return 'customer_report';
+    if (lower.includes('analytics') || lower.includes('dashboard') || lower.includes('metrics')) return 'generate_report';
     if (lower.includes('help') || lower.includes('how')) return 'get_info';
     
     // Conversation ending detection
@@ -267,6 +270,8 @@ GLASS ORDER CAPABILITIES:
 - Create orders (need: glass type, quantity, dimensions, customer)
 - Update order status (need: order number, new status like delivered, confirmed, production)
 - Search existing orders
+- Generate quarterly analytics reports
+- Generate customer analytics reports  
 - Generate PDF reports
 - Answer questions about glass types
 - End conversations when asked
@@ -391,6 +396,10 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
           return await this.updateOrder(parameters);
         case 'generate_pdf':
           return await this.generatePdf(parameters);
+        case 'generate_report':
+        case 'quarterly_report':
+        case 'customer_report':
+          return await this.generateReport(parameters);
         case 'end_conversation':
           return await this.endConversation(sessionId);
         default:
@@ -978,6 +987,55 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       statusCode: 200,
       message: `Order ${mockOrderNumber} status updated to ${mockStatus} (demo mode)`
     };
+  }
+
+  private async generateReport(parameters: any) {
+    try {
+      const transcript = parameters?.originalTranscript?.toLowerCase() || '';
+      console.log('📊 LISA: Generating report with transcript:', transcript);
+      
+      // Determine report type from transcript
+      if (transcript.includes('quarterly') || transcript.includes('quarter')) {
+        // Extract year and quarter
+        const currentYear = new Date().getFullYear();
+        const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+        
+        const yearMatch = transcript.match(/(\d{4})/);
+        const quarterMatch = transcript.match(/q[uarter\s]*(\d)/i) || transcript.match(/quarter\s+(\d)/i);
+        
+        const year = yearMatch ? parseInt(yearMatch[1]) : currentYear;
+        const quarter = quarterMatch ? parseInt(quarterMatch[1]) : currentQuarter;
+        
+        return {
+          action: 'show_quarterly_report',
+          reportType: 'quarterly',
+          data: { year, quarter },
+          message: `Opening quarterly analytics report for Q${quarter} ${year}`
+        };
+      } else if (transcript.includes('customer') && transcript.includes('report')) {
+        // Extract customer information if mentioned
+        return {
+          action: 'show_customer_report_selector',
+          reportType: 'customer',
+          data: {},
+          message: 'Opening customer analytics report. Please select a customer to analyze.'
+        };
+      } else {
+        // General analytics overview
+        return {
+          action: 'show_analytics_overview',
+          reportType: 'overview',
+          data: {},
+          message: 'Opening analytics dashboard with current performance metrics'
+        };
+      }
+    } catch (error) {
+      console.error('Error generating report:', error);
+      return { 
+        error: 'Failed to generate report',
+        message: 'Sorry, I encountered an issue generating that report. Please try again.'
+      };
+    }
   }
 
   private async generatePdf(parameters: any) {
