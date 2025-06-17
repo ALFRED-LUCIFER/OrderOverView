@@ -54,6 +54,70 @@ declare global {
   }
 }
 
+// Error Boundary for LISA Voice Interface
+class LISAErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    console.error('LISA Error Boundary caught error:', error);
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('LISA Error Boundary details:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1300,
+          }}
+        >
+          <Paper
+            elevation={4}
+            sx={{
+              p: 2,
+              maxWidth: 300,
+              bgcolor: 'error.light',
+              color: 'error.contrastText',
+            }}
+          >
+            <Typography variant="subtitle2" gutterBottom>
+              LISA Voice Assistant Error
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Voice interface temporarily unavailable
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => {
+                this.setState({ hasError: false });
+                window.location.reload();
+              }}
+              sx={{ color: 'inherit' }}
+            >
+              Restart LISA
+            </Button>
+          </Paper>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export const LISAInterface: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -170,32 +234,54 @@ export const LISAInterface: React.FC = () => {
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     
     if (SpeechRecognition) {
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
+      try {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = true;
+        recognitionRef.current.interimResults = true;
+        recognitionRef.current.lang = 'en-US';
 
-      recognitionRef.current.onresult = (event) => {
-        const current = event.results[event.results.length - 1];
-        const transcriptText = current[0].transcript;
-        
-        if (current.isFinal) {
-          setTranscript(transcriptText);
-          setInterimTranscript('');
-          sendVoiceCommand(transcriptText, true, false);
-        } else {
-          setInterimTranscript(transcriptText);
-          if (useNaturalConversation && isInConversation) {
-            sendVoiceCommand(transcriptText, false, true);
+        recognitionRef.current.onresult = (event) => {
+          try {
+            const current = event.results[event.results.length - 1];
+            const transcriptText = current[0].transcript;
+            
+            if (current.isFinal) {
+              setTranscript(transcriptText);
+              setInterimTranscript('');
+              sendVoiceCommand(transcriptText, true, false);
+            } else {
+              setInterimTranscript(transcriptText);
+              if (useNaturalConversation && isInConversation) {
+                sendVoiceCommand(transcriptText, false, true);
+              }
+            }
+          } catch (resultError) {
+            console.error('Error processing speech recognition result:', resultError);
           }
-        }
-      };
+        };
 
       recognitionRef.current.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        setError(`Speech recognition error: ${event.error}`);
-        setIsListening(false);
-        setStatus('error');
+        
+        // Safely handle error without causing React issues
+        try {
+          setError(`Speech recognition error: ${event.error}`);
+          setIsListening(false);
+          setStatus('error');
+          
+          // Reset recognition if needed
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.stop();
+            } catch (stopError) {
+              console.warn('Error stopping recognition:', stopError);
+            }
+          }
+        } catch (handlerError) {
+          console.error('Error in speech recognition error handler:', handlerError);
+          // Fallback error handling
+          setStatus('error');
+        }
       };
 
       recognitionRef.current.onend = () => {
@@ -218,6 +304,11 @@ export const LISAInterface: React.FC = () => {
           }, 1000);
         }
       };
+      } catch (initError) {
+        console.error('Error initializing speech recognition:', initError);
+        setError('Failed to initialize speech recognition');
+        setStatus('error');
+      }
     } else {
       setError('Speech recognition not supported in this browser');
       setStatus('error');
@@ -647,4 +738,13 @@ export const LISAInterface: React.FC = () => {
   );
 };
 
-export default LISAInterface;
+// Wrapped component with error boundary
+const LISAInterfaceWithErrorBoundary: React.FC = () => {
+  return (
+    <LISAErrorBoundary>
+      <LISAInterface />
+    </LISAErrorBoundary>
+  );
+};
+
+export default LISAInterfaceWithErrorBoundary;

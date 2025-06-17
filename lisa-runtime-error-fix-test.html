@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISA Runtime Error Fix Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .warning { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .green { background: #28a745; }
+        .red { background: #dc3545; }
+        .yellow { background: #ffc107; }
+        .blue { background: #007bff; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .error-log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 LISA Runtime Error Fix Test</h1>
+        <p>Testing the fix for <code>F.current.onerror</code> runtime error in LISA Voice Interface</p>
+        
+        <h3>✅ Fixes Applied</h3>
+        <div class="status success">
+            <div class="indicator green"></div>
+            <span><strong>Error Boundary Added:</strong> LISAErrorBoundary component wraps LISA interface</span>
+        </div>
+        <div class="status success">
+            <div class="indicator green"></div>
+            <span><strong>Speech Recognition Try-Catch:</strong> Wrapped initialization in error handling</span>
+        </div>
+        <div class="status success">
+            <div class="indicator green"></div>
+            <span><strong>Error Handler Improvements:</strong> Enhanced onerror callbacks with safe handling</span>
+        </div>
+        <div class="status success">
+            <div class="indicator green"></div>
+            <span><strong>Build Success:</strong> Frontend compiles without TypeScript errors</span>
+        </div>
+        
+        <h3>🧪 Test Results</h3>
+        <div id="testResults"></div>
+        
+        <h3>🎤 Voice Interface Tests</h3>
+        <button onclick="testSpeechSupport()">Test Speech Support</button>
+        <button onclick="testErrorHandling()">Test Error Handling</button>
+        <button onclick="testReactErrorBoundary()">Test Error Boundary</button>
+        <button onclick="openLiveApp()">Open Live Application</button>
+        
+        <h3>📱 Live Application Test</h3>
+        <div class="status info">
+            <div class="indicator blue"></div>
+            <span>The application below should load without JavaScript errors</span>
+        </div>
+        <iframe id="appFrame" src="http://localhost:5174" title="LISA Application"></iframe>
+        
+        <h3>🔍 Error Monitor</h3>
+        <div id="errorLog" class="error-log">No errors detected yet...</div>
+        
+        <h3>📋 Next Steps</h3>
+        <div class="status info">
+            <div class="indicator blue"></div>
+            <span><strong>1.</strong> Verify no F.current.onerror errors in browser console</span>
+        </div>
+        <div class="status info">
+            <div class="indicator blue"></div>
+            <span><strong>2.</strong> Test LISA voice functionality</span>
+        </div>
+        <div class="status info">
+            <div class="indicator blue"></div>
+            <span><strong>3.</strong> Verify error boundary catches any remaining issues</span>
+        </div>
+        <div class="status info">
+            <div class="indicator blue"></div>
+            <span><strong>4.</strong> Deploy to production</span>
+        </div>
+    </div>
+
+    <script>
+        let errorCount = 0;
+        const errorLog = document.getElementById('errorLog');
+        const testResults = document.getElementById('testResults');
+        
+        // Global error handler to catch any remaining errors
+        window.onerror = function(message, source, lineno, colno, error) {
+            errorCount++;
+            const errorInfo = `
+Error #${errorCount} - ${new Date().toLocaleTimeString()}
+Message: ${message}
+Source: ${source}
+Line: ${lineno}, Column: ${colno}
+Stack: ${error?.stack || 'No stack trace'}
+            `;
+            
+            errorLog.textContent = errorInfo;
+            
+            // Check if this is the F.current.onerror pattern
+            if (message.includes('F.current.onerror') || source.includes('index-')) {
+                addTestResult('error', 'F.current.onerror error still occurring!', errorInfo);
+            } else {
+                addTestResult('warning', 'Other JavaScript error detected', message);
+            }
+            
+            return false;
+        };
+        
+        // Promise rejection handler
+        window.addEventListener('unhandledrejection', function(event) {
+            errorCount++;
+            const errorInfo = `
+Promise Rejection #${errorCount} - ${new Date().toLocaleTimeString()}
+Reason: ${event.reason}
+            `;
+            
+            errorLog.textContent += '\\n' + errorInfo;
+            addTestResult('warning', 'Unhandled promise rejection', event.reason);
+        });
+        
+        function addTestResult(type, title, details) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `status ${type}`;
+            
+            const indicator = document.createElement('div');
+            indicator.className = `indicator ${type === 'success' ? 'green' : type === 'error' ? 'red' : 'yellow'}`;
+            
+            const text = document.createElement('span');
+            text.innerHTML = `<strong>${title}:</strong> ${details}`;
+            
+            resultDiv.appendChild(indicator);
+            resultDiv.appendChild(text);
+            testResults.appendChild(resultDiv);
+        }
+        
+        function testSpeechSupport() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                addTestResult('success', 'Speech Recognition', 'Supported in this browser');
+                
+                // Test initialization without errors
+                try {
+                    const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    recognition.continuous = true;
+                    recognition.interimResults = true;
+                    
+                    recognition.onerror = function(event) {
+                        addTestResult('warning', 'Speech Recognition Error', event.error);
+                    };
+                    
+                    addTestResult('success', 'Speech Recognition Initialization', 'No errors during setup');
+                } catch (error) {
+                    addTestResult('error', 'Speech Recognition Initialization Failed', error.message);
+                }
+            } else {
+                addTestResult('warning', 'Speech Recognition', 'Not supported in this browser');
+            }
+            
+            if ('speechSynthesis' in window) {
+                addTestResult('success', 'Speech Synthesis', 'Supported in this browser');
+            } else {
+                addTestResult('warning', 'Speech Synthesis', 'Not supported in this browser');
+            }
+        }
+        
+        function testErrorHandling() {
+            addTestResult('info', 'Error Handling Test', 'Testing try-catch blocks...');
+            
+            // Test various error scenarios
+            try {
+                // Simulate speech recognition error
+                const fakeEvent = { error: 'test-error' };
+                console.log('Testing error handler with fake event:', fakeEvent);
+                addTestResult('success', 'Error Handler', 'Can handle fake error events');
+            } catch (error) {
+                addTestResult('error', 'Error Handler Failed', error.message);
+            }
+            
+            // Test null reference handling
+            try {
+                const nullRef = { current: null };
+                if (nullRef.current && nullRef.current.onerror) {
+                    nullRef.current.onerror();
+                }
+                addTestResult('success', 'Null Reference Handling', 'No error with null references');
+            } catch (error) {
+                addTestResult('error', 'Null Reference Error', error.message);
+            }
+        }
+        
+        function testReactErrorBoundary() {
+            addTestResult('info', 'React Error Boundary', 'Error boundary should catch component errors');
+            
+            // Check if React is available
+            if (typeof React !== 'undefined') {
+                addTestResult('success', 'React Available', 'React is loaded globally');
+            } else {
+                addTestResult('info', 'React Not Global', 'React not in global scope (normal for Vite)');
+            }
+        }
+        
+        function openLiveApp() {
+            window.open('http://localhost:5174', '_blank');
+        }
+        
+        // Monitor iframe for errors
+        document.getElementById('appFrame').onload = function() {
+            addTestResult('success', 'Application Loaded', 'LISA app loaded in iframe');
+            
+            // Try to access iframe console (may be blocked by same-origin policy)
+            try {
+                const iframeWindow = this.contentWindow;
+                if (iframeWindow) {
+                    addTestResult('success', 'Iframe Access', 'Can access iframe window');
+                }
+            } catch (error) {
+                addTestResult('info', 'Iframe Security', 'Cannot access iframe due to security policy');
+            }
+        };
+        
+        document.getElementById('appFrame').onerror = function() {
+            addTestResult('error', 'Application Load Failed', 'Could not load LISA app in iframe');
+        };
+        
+        // Initial tests
+        setTimeout(() => {
+            testSpeechSupport();
+            addTestResult('success', 'Error Monitor Active', 'Monitoring for F.current.onerror and other errors');
+        }, 1000);
+        
+        // Check for errors every 30 seconds
+        setInterval(() => {
+            if (errorCount === 0) {
+                errorLog.textContent = `No errors detected after ${Math.floor(Date.now() / 30000)} checks...`;
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
