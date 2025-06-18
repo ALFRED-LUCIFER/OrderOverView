@@ -34,8 +34,7 @@ import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
 import ReportsPage from './pages/ReportsPage';
 // TechStackPage will be loaded lazily
-import LISAInterface from './components/LISAInterface';
-import EnhancedVoiceInterface from './components/EnhancedVoiceInterface';
+import EnhancedLISAInterface from './components/EnhancedLISAInterface';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider } from './contexts/NotificationContext';
 
@@ -52,9 +51,6 @@ const menuItems = [
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [useEnhancedVoice, setUseEnhancedVoice] = useState(
-    localStorage.getItem('useEnhancedVoice') === 'true'
-  );
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -69,12 +65,6 @@ function App() {
     if (isMobile) {
       setMobileOpen(false);
     }
-  };
-
-  const toggleVoiceInterface = () => {
-    const newValue = !useEnhancedVoice;
-    setUseEnhancedVoice(newValue);
-    localStorage.setItem('useEnhancedVoice', newValue.toString());
   };
 
   const drawer = (
@@ -167,22 +157,18 @@ function App() {
               Welcome to Glass OMS
             </Typography>
             
-            {/* Voice Interface Toggle */}
+            {/* Voice Interface Indicator */}
             {import.meta.env.VITE_ENABLE_VOICE === 'true' && (
-              <Tooltip title={`Switch to ${useEnhancedVoice ? 'Standard' : 'Enhanced'} Voice Interface`}>
-                <Chip
-                  icon={<VoiceIcon />}
-                  label={useEnhancedVoice ? 'Enhanced' : 'Standard'}
-                  onClick={toggleVoiceInterface}
-                  variant={useEnhancedVoice ? 'filled' : 'outlined'}
-                  color={useEnhancedVoice ? 'secondary' : 'default'}
-                  size="small"
-                  sx={{ 
-                    color: useEnhancedVoice ? 'white' : 'inherit',
-                    '&:hover': { cursor: 'pointer' }
-                  }}
-                />
-              </Tooltip>
+              <Chip
+                icon={<VoiceIcon />}
+                label="Enhanced Voice AI"
+                variant="filled"
+                color="secondary"
+                size="small"
+                sx={{ 
+                  color: 'white'
+                }}
+              />
             )}
             
             <AnalyticsIcon />
@@ -250,9 +236,9 @@ function App() {
         </ErrorBoundary>
       </Box>
 
-      {/* LISA Voice Interface - Fixed position overlay */}
+      {/* Enhanced LISA Voice Interface - Fixed position overlay */}
       {import.meta.env.VITE_ENABLE_VOICE === 'true' && (
-        useEnhancedVoice ? <EnhancedVoiceInterface /> : <LISAInterface />
+        <EnhancedLISAInterface />
       )}
     </Box>
   </NotificationProvider>

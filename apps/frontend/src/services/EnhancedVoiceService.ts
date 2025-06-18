@@ -1,13 +1,17 @@
 import { VoiceActivityDetection, VoiceActivityConfig } from './VoiceActivityDetection';
 import { elevenLabsService, ElevenLabsService } from './ElevenLabsService';
+import { io, Socket } from 'socket.io-client';
 
 export interface EnhancedVoiceConfig {
-  sttProvider: 'browser' | 'whisper' | 'deepgram';
+  sttProvider: 'browser' | 'whisper' | 'deepgram' | 'auto';
   ttsProvider: 'browser' | 'elevenlabs' | 'openai';
+  aiProvider: 'openai' | 'anthropic' | 'ensemble';
   enableVAD: boolean;
   enableInterruption: boolean;
   enableWakeWord: boolean;
   autoRestart: boolean;
+  conversationMode: boolean;
+  enhancedMode: boolean;
   vadConfig?: Partial<VoiceActivityConfig>;
 }
 
@@ -18,7 +22,25 @@ export interface VoiceState {
   currentVolume: number;
   isConnected: boolean;
   hasPermission: boolean;
+  aiProvidersConnected: boolean;
+  currentProvider: string;
+  confidence: number;
   error?: string;
+}
+
+export interface AICapabilities {
+  transcription: {
+    openai: boolean;
+    deepgram: boolean;
+  };
+  conversation: {
+    openai: boolean;
+    anthropic: boolean;
+  };
+  synthesis: {
+    elevenlabs: boolean;
+    browser: boolean;
+  };
 }
 
 export class EnhancedVoiceService {
@@ -28,16 +50,22 @@ export class EnhancedVoiceService {
   private vad: VoiceActivityDetection | null = null;
   private currentAudio: HTMLAudioElement | null = null;
   private speechSynthesis: SpeechSynthesis | null = null;
+  private socket: Socket | null = null;
   private isInterrupted = false;
+  private capabilities: AICapabilities | null = null;
+  private listeners: Map<string, Function[]> = new Map();
   private recordingTimeout: NodeJS.Timeout | null = null;
 
   private config: EnhancedVoiceConfig = {
-    sttProvider: 'browser',
-    ttsProvider: 'browser',
+    sttProvider: 'auto',
+    ttsProvider: 'elevenlabs',
+    aiProvider: 'ensemble',
     enableVAD: true,
     enableInterruption: true,
     enableWakeWord: false,
-    autoRestart: true
+    autoRestart: true,
+    conversationMode: true,
+    enhancedMode: true
   };
 
   private state: VoiceState = {
@@ -46,7 +74,10 @@ export class EnhancedVoiceService {
     isProcessing: false,
     currentVolume: 0,
     isConnected: false,
-    hasPermission: false
+    hasPermission: false,
+    aiProvidersConnected: false,
+    currentProvider: '',
+    confidence: 0
   };
 
   private callbacks: {
@@ -81,6 +112,11 @@ export class EnhancedVoiceService {
       // Setup voice activity detection if enabled
       if (this.config.enableVAD && this.mediaStream) {
         await this.vad?.initialize(this.mediaStream);
+      }
+
+      // Initialize AI providers if enhanced mode is enabled
+      if (this.config.enhancedMode) {
+        await this.initializeAIProviders();
       }
       
       this.updateState({ isConnected: true, hasPermission: true });
@@ -438,6 +474,7 @@ export class EnhancedVoiceService {
    */
   private async fallbackToWebSpeechAPI(): Promise<string> {
     return new Promise((resolve, reject) => {
+      // @ts-ignore - webkitSpeechRecognition is not in TypeScript definitions but exists in browsers
       const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
       
       if (!SpeechRecognition) {
@@ -450,12 +487,12 @@ export class EnhancedVoiceService {
       recognition.interimResults = false;
       recognition.lang = 'en-US';
 
-      recognition.onresult = (event) => {
+      recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         resolve(transcript);
       };
 
-      recognition.onerror = (event) => {
+      recognition.onerror = (event: any) => {
         reject(new Error(`Speech recognition error: ${event.error}`));
       };
 
@@ -740,6 +777,186 @@ export class EnhancedVoiceService {
     this.mediaRecorder = null;
     this.audioChunks = [];
     this.updateState({ isConnected: false, hasPermission: false });
+  }
+
+  /**
+   * Initialize AI providers connection
+   */
+  async initializeAIProviders(): Promise<void> {
+    try {
+      console.log('🤖 Initializing AI providers connection...');
+      
+      this.socket = io('http://localhost:3001', {
+        transports: ['websocket'],
+        autoConnect: true,
+        timeout: 10000
+      });
+
+      this.setupSocketListeners();
+      
+    } catch (error) {
+      console.error('❌ AI providers initialization failed:', error);
+      this.updateState({ error: 'Failed to connect to AI providers' });
+    }
+  }
+
+  /**
+   * Setup WebSocket listeners for AI providers
+   */
+  private setupSocketListeners(): void {
+    if (!this.socket) return;
+
+    this.socket.on('connect', () => {
+      console.log('✅ AI providers connected');
+      this.updateState({ aiProvidersConnected: true });
+      this.requestAICapabilities();
+    });
+
+    this.socket.on('disconnect', () => {
+      console.log('❌ AI providers disconnected');
+      this.updateState({ aiProvidersConnected: false });
+    });
+
+    this.socket.on('ai-capabilities', (capabilities: AICapabilities) => {
+      console.log('🔍 AI capabilities updated:', capabilities);
+      this.capabilities = capabilities;
+      this.emit('capabilities', capabilities);
+    });
+
+    this.socket.on('enhanced-transcription', (result: any) => {
+      console.log('🎤 Enhanced transcription:', result);
+      this.updateState({ 
+        isProcessing: false, 
+        currentProvider: result.provider,
+        confidence: result.confidence 
+      });
+      this.emit('transcription', result);
+    });
+
+    this.socket.on('enhanced-conversation', (result: any) => {
+      console.log('🤖 Enhanced conversation:', result);
+      this.updateState({ 
+        currentProvider: result.provider,
+        confidence: result.confidence 
+      });
+      this.emit('conversation', result);
+    });
+
+    this.socket.on('processing-status', (status: any) => {
+      this.updateState({ 
+        isProcessing: status.isProcessing,
+        currentProvider: status.provider || ''
+      });
+    });
+  }
+
+  /**
+   * Request AI capabilities from backend
+   */
+  private requestAICapabilities(): void {
+    this.socket?.emit('get-ai-capabilities');
+  }
+
+  /**
+   * Process audio with AI providers
+   */
+  async processWithAIProviders(audioBlob: Blob, options?: {
+    conversationContext?: any[];
+    enhancedMode?: boolean;
+  }): Promise<void> {
+    if (!this.state.aiProvidersConnected) {
+      throw new Error('AI providers not connected');
+    }
+
+    try {
+      this.updateState({ isProcessing: true });
+      
+      // Convert blob to base64 for WebSocket transmission
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      this.socket?.emit('process-enhanced-audio', {
+        audio: base64Audio,
+        mimeType: audioBlob.type,
+        config: this.config,
+        options: {
+          conversationContext: options?.conversationContext,
+          enhancedMode: options?.enhancedMode ?? this.config.enhancedMode,
+          ...options
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ AI processing failed:', error);
+      this.updateState({ isProcessing: false, error: 'AI processing failed' });
+      throw error;
+    }
+  }
+
+  /**
+   * Synthesize speech with AI providers
+   */
+  async synthesizeWithAI(text: string, options?: {
+    provider?: string;
+    voice?: string;
+  }): Promise<void> {
+    if (!this.state.aiProvidersConnected) {
+      throw new Error('AI providers not connected');
+    }
+
+    try {
+      this.updateState({ isSpeaking: true });
+
+      this.socket?.emit('synthesize-enhanced-speech', {
+        text,
+        provider: options?.provider || this.config.ttsProvider,
+        voice: options?.voice,
+        enhancedMode: this.config.enhancedMode,
+        config: this.config
+      });
+
+    } catch (error) {
+      console.error('❌ AI speech synthesis failed:', error);
+      this.updateState({ isSpeaking: false, error: 'Speech synthesis failed' });
+      throw error;
+    }
+  }
+
+  /**
+   * Get AI capabilities
+   */
+  getAICapabilities(): AICapabilities | null {
+    return this.capabilities;
+  }
+
+  /**
+   * Event emitter
+   */
+  private emit(event: string, data?: any): void {
+    const eventListeners = this.listeners.get(event);
+    if (eventListeners) {
+      eventListeners.forEach(callback => callback(data));
+    }
+  }
+
+  /**
+   * Event listener management
+   */
+  on(event: string, callback: Function): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event)!.push(callback);
+  }
+
+  off(event: string, callback: Function): void {
+    const eventListeners = this.listeners.get(event);
+    if (eventListeners) {
+      const index = eventListeners.indexOf(callback);
+      if (index > -1) {
+        eventListeners.splice(index, 1);
+      }
+    }
   }
 }
 

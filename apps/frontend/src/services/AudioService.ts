@@ -215,6 +215,40 @@ export class AudioService {
       browserTTSDisabled: true
     };
   }
+
+  /**
+   * Play audio buffer directly (for AI provider audio responses)
+   */
+  async playAudioBuffer(audioBuffer: ArrayBuffer): Promise<void> {
+    try {
+      console.log('🔊 Playing audio buffer...');
+      
+      // Create blob from buffer
+      const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Create and play audio element
+      const audio = new Audio(audioUrl);
+      
+      return new Promise((resolve, reject) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          resolve();
+        };
+        
+        audio.onerror = (error) => {
+          URL.revokeObjectURL(audioUrl);
+          reject(error);
+        };
+        
+        audio.play().catch(reject);
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to play audio buffer:', error);
+      throw error;
+    }
+  }
 }
 
 // Singleton instance

@@ -406,4 +406,188 @@ export class VoiceController {
       };
     }
   }
+
+  /**
+   * Enhanced LISA endpoints - AI providers integration
+   */
+
+  @Get('ai-health')
+  async getAIProvidersHealth() {
+    try {
+      // Check AI providers health status
+      const openaiAvailable = !!process.env.OPENAI_API_KEY;
+      const anthropicAvailable = !!process.env.ANTHROPIC_API_KEY;
+      const deepgramAvailable = !!process.env.DEEPGRAM_API_KEY;
+      const elevenLabsAvailable = !!process.env.ELEVENLABS_API_KEY;
+
+      return {
+        openai: openaiAvailable,
+        anthropic: anthropicAvailable,
+        deepgram: deepgramAvailable,
+        elevenlabs: elevenLabsAvailable,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('AI health check failed:', error);
+      return {
+        openai: false,
+        anthropic: false,
+        deepgram: false,
+        elevenlabs: false,
+        error: error.message
+      };
+    }
+  }
+
+  @Post('enhanced-process')
+  @UseInterceptors(FileInterceptor('audio', {
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    },
+  }))
+  async processEnhancedAudio(
+    @UploadedFile() audioFile: any,
+    @Body() body: any
+  ) {
+    try {
+      console.log('🎤 Processing enhanced audio with AI providers...');
+      
+      if (!audioFile) {
+        throw new Error('No audio file provided');
+      }
+
+      // Enhanced transcription with AI providers
+      const transcriptionResult = await this.enhancedVoiceService.transcribeAudio(
+        audioFile.buffer,
+        body.provider || 'auto'
+      );
+
+      // Enhanced intent detection if we have transcript
+      let intentResult = null;
+      if (transcriptionResult.transcript) {
+        const conversationContext = body.context ? JSON.parse(body.context) : [];
+        intentResult = await this.enhancedIntentService.detectIntent(
+          transcriptionResult.transcript,
+          conversationContext.map(msg => msg.content)
+        );
+      }
+
+      // Generate enhanced response if conversation mode is enabled
+      let conversationResult = null;
+      if (body.conversationMode === 'true' && intentResult) {
+        conversationResult = await this.voiceService.processVoiceCommand(
+          transcriptionResult.transcript,
+          'enhanced-session',
+          {
+            isEndOfSpeech: true,
+            interimResults: false,
+            useNaturalConversation: true
+          }
+        );
+      }
+
+      return {
+        transcript: transcriptionResult.transcript,
+        confidence: transcriptionResult.confidence,
+        provider: transcriptionResult.provider,
+        intent: intentResult,
+        conversation: conversationResult,
+        timestamp: new Date().toISOString(),
+        enhancedMode: body.enhancedMode === 'true'
+      };
+
+    } catch (error) {
+      console.error('❌ Enhanced audio processing failed:', error);
+      throw error;
+    }
+  }
+
+  @Post('enhanced-speak')
+  async enhancedSpeak(
+    @Body() request: {
+      text: string;
+      provider?: 'elevenlabs' | 'browser';
+      enhancedMode?: boolean;
+      voice?: string;
+    },
+    @Res() res: Response
+  ) {
+    try {
+      console.log('🔊 Enhanced TTS request:', request.text.substring(0, 50) + '...');
+      
+      if (request.provider === 'elevenlabs' && process.env.ELEVENLABS_API_KEY) {
+        // Use Enhanced ElevenLabs service
+        const ttsResult = await this.elevenLabsService.textToSpeech(
+          request.text,
+          {
+            voiceId: request.voice || process.env.ELEVENLABS_VOICE_ID,
+            modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2',
+            stability: parseFloat(process.env.VOICE_STABILITY || '0.75'),
+            similarityBoost: parseFloat(process.env.VOICE_SIMILARITY_BOOST || '0.75'),
+            style: parseFloat(process.env.VOICE_STYLE || '0.2')
+          }
+        );
+
+        if (ttsResult.success && ttsResult.audioBuffer) {
+          res.set({
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': ttsResult.audioBuffer.length.toString(),
+          });
+          
+          return res.send(ttsResult.audioBuffer);
+        } else {
+          throw new Error(ttsResult.error || 'ElevenLabs TTS failed');
+        }
+      } else {
+        // Fallback response
+        return res.status(200).json({
+          message: 'TTS provider not available, use browser fallback',
+          fallback: true
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Enhanced TTS failed:', error);
+      return res.status(500).json({
+        error: 'Enhanced TTS failed',
+        message: error.message,
+        fallback: true
+      });
+    }
+  }
+
+  @Get('enhanced-capabilities')
+  async getEnhancedCapabilities() {
+    try {
+      return {
+        transcription: {
+          openai: !!process.env.OPENAI_API_KEY,
+          deepgram: !!process.env.DEEPGRAM_API_KEY,
+          providers: ['whisper', 'deepgram', 'auto']
+        },
+        conversation: {
+          openai: !!process.env.OPENAI_API_KEY,
+          anthropic: !!process.env.ANTHROPIC_API_KEY,
+          providers: ['openai', 'anthropic', 'ensemble']
+        },
+        synthesis: {
+          elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+          browser: true,
+          providers: ['elevenlabs', 'browser']
+        },
+        features: {
+          conversationMode: true,
+          intentDetection: true,
+          voiceActivityDetection: true,
+          realTimeTranscription: !!process.env.DEEPGRAM_API_KEY,
+          enhancedMode: true
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ Failed to get enhanced capabilities:', error);
+      throw error;
+    }
+  }
 }

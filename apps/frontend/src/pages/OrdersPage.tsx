@@ -122,7 +122,7 @@ const OrdersPage = () => {
     try {
       await updateOrderMutation.mutateAsync({
         id: orderId,
-        data: { status: newStatus }
+        data: { status: newStatus as OrderStatus }
       });
       showSuccess(`Order ${orderNumber} status updated to ${newStatus.replace('_', ' ')}`);
     } catch (error) {

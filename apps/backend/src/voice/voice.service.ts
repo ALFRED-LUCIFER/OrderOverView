@@ -1,21 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import Groq from 'groq-sdk';
 import { OrdersService } from '../orders/orders.service';
 import { NaturalConversationService } from './natural-conversation.service';
 
 @Injectable()
 export class VoiceService {
-  private groq: Groq;
   private conversationHistory: Map<string, any[]> = new Map();
 
   constructor(
     private ordersService: OrdersService,
     public naturalConversationService: NaturalConversationService,
-  ) {
-    this.groq = new Groq({
-      apiKey: process.env.GROQ_API_KEY,
-    });
-  }
+  ) {}
 
   async processVoiceCommand(
     transcript: string,
@@ -90,18 +84,8 @@ export class VoiceService {
     Current context: ${JSON.stringify(history.slice(-5))}`;
 
     try {
-      const completion = await this.groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...history,
-          { role: 'user', content: transcript },
-        ],
-        model: 'llama3-70b-8192',
-        temperature: 0.7,
-        max_tokens: 500,
-      });
-
-      const aiResponse = completion.choices[0]?.message?.content || '';
+      // Fallback to simple pattern matching for basic functionality
+      const aiResponse = this.generateFallbackResponse(transcript);
 
       // Update conversation history
       history.push(
@@ -187,6 +171,31 @@ export class VoiceService {
   private extractOrderId(text: string): string | null {
     const match = text.match(/order\s+#?(\d+)/i);
     return match ? match[1] : null;
+  }
+
+  /**
+   * Generate fallback response using simple pattern matching
+   */
+  private generateFallbackResponse(transcript: string): string {
+    const lower = transcript.toLowerCase();
+    
+    if (lower.includes('hello') || lower.includes('hi')) {
+      return "Hello! I'm here to help you with your glass orders. What can I do for you?";
+    }
+    
+    if (lower.includes('order') && (lower.includes('new') || lower.includes('create'))) {
+      return "I can help you create a new order. What type of glass do you need?";
+    }
+    
+    if (lower.includes('status') || lower.includes('check')) {
+      return "I can check your order status. Could you provide the order number?";
+    }
+    
+    if (lower.includes('goodbye') || lower.includes('bye')) {
+      return "Thank you for using OrderOverView. Have a great day!";
+    }
+    
+    return "I understand you need help with glass orders. Could you be more specific about what you'd like to do?";
   }
 
   clearSession(sessionId: string): void {

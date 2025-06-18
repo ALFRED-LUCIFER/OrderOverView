@@ -7,6 +7,7 @@ import { NaturalConversationService } from './natural-conversation.service';
 import { EnhancedVoiceService } from './enhanced-voice.service';
 import { EnhancedIntentService } from './enhanced-intent.service';
 import { EnhancedElevenLabsService } from './enhanced-elevenlabs.service';
+import { AIProvidersService } from './ai-providers.service';
 import { OrdersModule } from '../orders/orders.module';
 import { CustomersModule } from '../customers/customers.module';
 import { MailerModule } from '../mailer/mailer.module';
@@ -25,7 +26,8 @@ import { MailerModule } from '../mailer/mailer.module';
     NaturalConversationService,
     EnhancedVoiceService,
     EnhancedIntentService,
-    EnhancedElevenLabsService
+    EnhancedElevenLabsService,
+    AIProvidersService
   ],
   exports: [
     VoiceService, 

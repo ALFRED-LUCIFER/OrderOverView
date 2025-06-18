@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import Groq from 'groq-sdk';
 import { OrdersService } from '../orders/orders.service';
 import { CustomersService } from '../customers/customers.service';
 import { MailerService } from '../mailer/mailer.service';
 import { EnhancedElevenLabsService } from './enhanced-elevenlabs.service';
+import { AIProvidersService } from './ai-providers.service';
 
 interface ConversationState {
   isUserSpeaking: boolean;
@@ -45,19 +45,15 @@ interface NaturalResponse {
 
 @Injectable()
 export class NaturalConversationService {
-  private groq: Groq;
   private conversations = new Map<string, ConversationState>();
 
   constructor(
     private ordersService: OrdersService,
     private customersService: CustomersService,
     private mailerService: MailerService,
-    private elevenLabsService: EnhancedElevenLabsService
-  ) {
-    this.groq = new Groq({
-      apiKey: process.env.GROQ_API_KEY,
-    });
-  }
+    private elevenLabsService: EnhancedElevenLabsService,
+    private aiProvidersService: AIProvidersService
+  ) {}
 
   /**
    * Check if voice responses should be enabled based on AI_RESPONSE_STYLE
@@ -400,15 +396,15 @@ IMPORTANT: Detect "end_conversation" intent when user says phrases like:
 Respond in JSON format only.`;
 
     try {
-      const completion = await this.groq.chat.completions.create({
-        messages: [{ role: 'user', content: intentPrompt }],
-        model: 'llama-3.3-70b-versatile', // Latest and most powerful model
-        temperature: 0.1,
-        max_tokens: 200,
-      });
-
-      const result = completion.choices[0]?.message?.content || '{}';
-      return JSON.parse(result);
+      const aiResult = await this.aiProvidersService.detectIntentWithOpenAI(transcript, context);
+      
+      return {
+        intent: aiResult.intent.toLowerCase(),
+        topic: 'general',
+        parameters: aiResult.entities,
+        emotion: 'neutral',
+        requiresUserInput: aiResult.shouldRespond
+      };
     } catch (error) {
       // Fallback intent detection
       return {
@@ -423,6 +419,16 @@ Respond in JSON format only.`;
 
   private fallbackIntentDetection(transcript: string): string {
     const lower = transcript.toLowerCase();
+    
+    // Enhanced greeting detection
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey') ||
+        lower.includes('good morning') || lower.includes('good afternoon') || 
+        lower.includes('good evening') || lower.includes('howdy') ||
+        (lower.includes('lisa') && (lower.includes('there') || lower.includes('how are you'))) ||
+        lower === 'hi' || lower === 'hello' || lower === 'hey') {
+      return 'greeting';
+    }
+    
     if (lower.includes('order') && (lower.includes('create') || lower.includes('new'))) return 'create_order';
     if (lower.includes('update') && lower.includes('order') || 
         (lower.includes('change') && lower.includes('status')) ||
@@ -474,15 +480,23 @@ LISA'S PERSONALITY:
 - Efficient but never rushed
 - Empathetic and understanding
 - Expert in glass industry terminology
-- Always introduces herself as "Hi, this is LISA" on first interaction
+- Remembers conversation context and refers back to it
+
+GREETING BEHAVIOR:
+- Respond to "Hi" with "Hi there!" or "Hello!"
+- Respond to "Hello" with "Hello! How can I help you today?"
+- Always be warm and welcoming on first contact
+- Show enthusiasm when users greet you
+- Remember if you've already greeted this session
 
 CRITICAL CONVERSATIONAL RULES:
-1. Start responses with natural acknowledgments: "Oh I see", "Got it", "Alright", "Sure thing"
+1. Start responses with natural acknowledgments: "Oh I see", "Got it", "Alright", "Sure thing", "Hi there!"
 2. Use conversational contractions: I'm, you're, let's, we'll, that's
 3. Include occasional natural hesitations: "um", "uh", "well", "you know"
 4. Mirror the user's energy and emotion level
 5. Ask follow-up questions conversationally
 6. Keep responses under 50 words for natural flow
+7. SPECIAL: If user just says "Hi" or "Hello", respond warmly and ask how you can help
 
 RESPONSE STYLE: ${responseStyle}
 - Be warm and helpful like a skilled phone representative
@@ -509,25 +523,27 @@ ${context.slice(-8).join('\n')}
 
 USER SAID: "${transcript}"
 
-SPECIAL INSTRUCTION: If the user wants to end the conversation (saying goodbye, stop, finish, done, etc.), respond warmly and add [ACTION:end_conversation] at the end.
+SPECIAL INSTRUCTIONS:
+- If user greets you (hi, hello, hey), respond warmly and ask how you can help
+- If user wants to end the conversation (saying goodbye, stop, finish, done, etc.), respond warmly and add [ACTION:end_conversation] at the end
+- For casual conversation or greetings, be friendly and offer to help with orders or information
 
 Respond naturally and conversationally as LISA. If taking action, add [ACTION:${intent.intent}] at the end.`;
 
     try {
-      const completion = await this.groq.chat.completions.create({
-        messages: [{ role: 'system', content: systemPrompt }],
-        model: 'llama-3.3-70b-versatile', // Latest and most powerful model
-        temperature: 0.8, // Higher for more natural speech
-        max_tokens: 150, // Slightly increased for better responses
-        stream: false,
-      });
+      const aiResult = await this.aiProvidersService.generateResponseWithOpenAI(
+        transcript,
+        intent.intent,
+        context.slice(-8),
+        { systemInfo: 'ARIA voice assistant for OrderOverView glass orders' }
+      );
 
-      let responseText = completion.choices[0]?.message?.content || 
+      let responseText = aiResult.response || 
         "Sorry, I didn't quite catch that. Could you say that again?";
 
       // Extract action if present
       const actionMatch = responseText.match(/\[ACTION:(\w+)\]/);
-      let action = actionMatch ? actionMatch[1] : null;
+      let action = actionMatch ? actionMatch[1] : aiResult.action;
       
       // Map internal actions to frontend-expected action names
       if (action === 'search_orders') {
@@ -613,6 +629,8 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       console.log(`🎯 LISA executing action: "${action}" with parameters:`, parameters);
       
       switch (action) {
+        case 'greeting':
+          return await this.handleGreeting(sessionId);
         case 'search_orders':
         case 'search_results':  // Handle both action names
           return await this.searchOrdersEnhanced(parameters);
@@ -1004,7 +1022,7 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
     let filteredOrders = [...orders];
     let searchDescription = 'all orders';
     
-    // Enhanced date filtering
+    // Enhanced date filtering with natural language
     if (transcript.includes('today') || transcript.includes('recent')) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -1014,6 +1032,25 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       });
       searchDescription = 'today\'s orders';
     }
+    else if (transcript.includes('yesterday')) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      filteredOrders = orders.filter(order => {
+        const orderDate = new Date(order.createdAt);
+        orderDate.setHours(0, 0, 0, 0);
+        return orderDate.getTime() === yesterday.getTime();
+      });
+      searchDescription = 'yesterday\'s orders';
+    }
+    else if (transcript.includes('this week') || transcript.includes('week')) {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      filteredOrders = orders.filter(order => 
+        new Date(order.createdAt) >= weekAgo
+      );
+      searchDescription = 'this week\'s orders';
+    }
     
     // Enhanced status filtering with natural language
     else if (transcript.includes('urgent') || transcript.includes('priority')) {
@@ -1022,24 +1059,71 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       );
       searchDescription = 'urgent priority orders';
     }
+    else if (transcript.includes('pending') || transcript.includes('waiting')) {
+      filteredOrders = orders.filter(order => 
+        order.status?.toLowerCase().includes('pending')
+      );
+      searchDescription = 'pending orders';
+    }
+    else if (transcript.includes('delivered') || transcript.includes('completed')) {
+      filteredOrders = orders.filter(order => 
+        order.status?.toLowerCase().includes('delivered') || 
+        order.status?.toLowerCase().includes('completed')
+      );
+      searchDescription = 'delivered orders';
+    }
     
-    // Enhanced customer search
+    // Enhanced customer search with fuzzy matching
     else if (transcript.includes('customer') || transcript.includes('client')) {
-      const customerMatch = transcript.match(/(?:customer|client)\s+(\w+)/);
+      const customerMatch = transcript.match(/(?:customer|client|for)\s+([a-zA-Z\s]+?)(?:\s|$)/);
       if (customerMatch) {
-        const customerName = customerMatch[1];
+        const customerName = customerMatch[1].trim().toLowerCase();
         filteredOrders = orders.filter(order => 
-          order.customer?.name?.toLowerCase().includes(customerName.toLowerCase()) ||
-          order.customerName?.toLowerCase().includes(customerName.toLowerCase())
+          order.customer?.name?.toLowerCase().includes(customerName) ||
+          order.customerName?.toLowerCase().includes(customerName)
         );
-        searchDescription = `orders for customer ${customerName}`;
+        searchDescription = `orders for customer containing "${customerName}"`;
       }
+    }
+    
+    // Enhanced glass type search
+    else if (transcript.includes('bulletproof') || transcript.includes('security')) {
+      filteredOrders = orders.filter(order => 
+        order.glassType?.toLowerCase().includes('bulletproof')
+      );
+      searchDescription = 'bulletproof glass orders';
+    }
+    else if (transcript.includes('tempered')) {
+      filteredOrders = orders.filter(order => 
+        order.glassType?.toLowerCase().includes('tempered')
+      );
+      searchDescription = 'tempered glass orders';
+    }
+    else if (transcript.includes('laminated')) {
+      filteredOrders = orders.filter(order => 
+        order.glassType?.toLowerCase().includes('laminated')
+      );
+      searchDescription = 'laminated glass orders';
     }
     
     // Enhanced value-based search
     else if (transcript.includes('expensive') || transcript.includes('highest') || transcript.includes('top')) {
       filteredOrders = orders.sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
       searchDescription = 'highest value orders';
+    }
+    else if (transcript.includes('cheapest') || transcript.includes('lowest') || transcript.includes('budget')) {
+      filteredOrders = orders.sort((a, b) => (a.totalPrice || 0) - (b.totalPrice || 0));
+      searchDescription = 'lowest cost orders';
+    }
+    
+    // Enhanced quantity search
+    else if (transcript.includes('large') || transcript.includes('big')) {
+      filteredOrders = orders.filter(order => (order.quantity || 0) > 50);
+      searchDescription = 'large quantity orders (>50 pieces)';
+    }
+    else if (transcript.includes('small') || transcript.includes('few')) {
+      filteredOrders = orders.filter(order => (order.quantity || 0) <= 10);
+      searchDescription = 'small quantity orders (≤10 pieces)';
     }
     
     // Default intelligent sorting
@@ -1594,6 +1678,43 @@ Would you like me to create this order? Say "yes" to confirm or "no" to cancel.`
       success: false,
       statusCode: 404,
       message: 'Session not found'
+    };
+  }
+
+  private async handleGreeting(sessionId: string) {
+    const state = this.getState(sessionId);
+    
+    // Check if this is the first greeting in the session
+    const isFirstGreeting = !state?.conversationContext.some(msg => 
+      msg.includes('Hi there!') || msg.includes('Hello!') || msg.includes('LISA')
+    );
+    
+    const greetingMessages = [
+      "Hi there! I'm LISA, your glass order assistant. How can I help you today?",
+      "Hello! Great to hear from you. What can I do for you?",
+      "Hi! I'm here to help with your glass orders. What do you need?",
+      "Hello there! Ready to assist with orders, searches, or any questions you have.",
+    ];
+    
+    const casualGreetings = [
+      "Hi! What can I help you with today?",
+      "Hello! How are you doing?",
+      "Hey there! What's on your mind?",
+      "Hi! Good to chat with you again."
+    ];
+    
+    const selectedMessage = isFirstGreeting 
+      ? greetingMessages[Math.floor(Math.random() * greetingMessages.length)]
+      : casualGreetings[Math.floor(Math.random() * casualGreetings.length)];
+    
+    console.log(`👋 LISA: Greeting user (first: ${isFirstGreeting}): "${selectedMessage}"`);
+    
+    return {
+      success: true,
+      statusCode: 200,
+      message: selectedMessage,
+      greeting: true,
+      isFirstGreeting
     };
   }
 

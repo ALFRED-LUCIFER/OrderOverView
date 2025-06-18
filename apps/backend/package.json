@@ -20,6 +20,8 @@
     "render:start": "node dist/main"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
+    "@deepgram/sdk": "^4.4.0",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.0",
     "@nestjs/core": "^10.3.0",
@@ -32,10 +34,10 @@
     "@types/jspdf": "^2.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
-    "groq-sdk": "^0.7.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.1",
     "mailersend": "^2.6.0",
+    "openai": "^5.5.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "socket.io": "^4.7.0",

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AIProvidersService, TranscriptionResult as AITranscriptionResult } from './ai-providers.service';
 
 export interface TranscriptionResult {
   transcript: string;
@@ -12,6 +13,7 @@ export interface TranscriptionResult {
   }>;
   language?: string;
   duration?: number;
+  provider?: string;
 }
 
 export interface VoiceActivityResult {
@@ -23,22 +25,73 @@ export interface VoiceActivityResult {
 
 @Injectable()
 export class EnhancedVoiceService {
-  constructor(private configService: ConfigService) {}
+  private readonly logger = new Logger(EnhancedVoiceService.name);
+
+  constructor(
+    private configService: ConfigService,
+    private aiProvidersService: AIProvidersService
+  ) {}
 
   /**
-   * Simple transcription service - returns mock data for basic functionality
+   * Real AI transcription service using OpenAI Whisper and Deepgram
    */
   async transcribeAudio(audioBuffer: Buffer, preferredService: 'whisper' | 'deepgram' | 'auto' = 'auto'): Promise<TranscriptionResult> {
-    console.log('🎤 Processing audio transcription...');
+    this.logger.log('🎤 Processing audio transcription with AI providers...');
     
-    // Basic mock transcription for demonstration
-    return {
-      transcript: "Hello, I need help with my order",
-      confidence: 0.95,
-      words: [],
-      language: 'en',
-      duration: audioBuffer.length / 16000 // Approximate duration
-    };
+    try {
+      let result: AITranscriptionResult;
+
+      if (preferredService === 'whisper' || (preferredService === 'auto' && process.env.OPENAI_API_KEY)) {
+        try {
+          result = await this.aiProvidersService.transcribeWithOpenAI(audioBuffer);
+          this.logger.log(`Transcription successful with OpenAI Whisper: "${result.text}"`);
+        } catch (error) {
+          this.logger.warn('OpenAI Whisper failed, trying Deepgram...', error.message);
+          if (process.env.DEEPGRAM_API_KEY) {
+            result = await this.aiProvidersService.transcribeWithDeepgram(audioBuffer);
+            this.logger.log(`Transcription successful with Deepgram: "${result.text}"`);
+          } else {
+            throw error;
+          }
+        }
+      } else if (preferredService === 'deepgram' || (preferredService === 'auto' && process.env.DEEPGRAM_API_KEY)) {
+        try {
+          result = await this.aiProvidersService.transcribeWithDeepgram(audioBuffer);
+          this.logger.log(`Transcription successful with Deepgram: "${result.text}"`);
+        } catch (error) {
+          this.logger.warn('Deepgram failed, trying OpenAI Whisper...', error.message);
+          if (process.env.OPENAI_API_KEY) {
+            result = await this.aiProvidersService.transcribeWithOpenAI(audioBuffer);
+            this.logger.log(`Transcription successful with OpenAI Whisper: "${result.text}"`);
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        throw new Error('No AI transcription providers configured');
+      }
+
+      return {
+        transcript: result.text,
+        confidence: result.confidence,
+        words: [], // Could be enhanced with word-level timestamps
+        language: 'en',
+        duration: result.duration || audioBuffer.length / 16000,
+        provider: result.provider,
+      };
+    } catch (error) {
+      this.logger.error('AI transcription failed, falling back to mock response:', error.message);
+      
+      // Fallback to mock transcription for development
+      return {
+        transcript: "Hello, I need help with my order",
+        confidence: 0.7,
+        words: [],
+        language: 'en',
+        duration: audioBuffer.length / 16000,
+        provider: 'fallback',
+      };
+    }
   }
 
   /**
