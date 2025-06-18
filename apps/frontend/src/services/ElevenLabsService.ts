@@ -1,11 +1,8 @@
 /**
- * ElevenLabs Text-to-Speech Service
+ * ElevenLabs Text-to-Speech Service - Enhanced with Backend Integration
  * 
- * A reliable alterna    } catch (error) {
-      console.error('ElevenLabs TTS error:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`ElevenLabs TTS failed: ${errorMessage}`);e to browser speechSynthesis API
- * that provides high-quality voice synthesis with better stability
+ * A reliable service that provides high-quality voice synthesis through our backend,
+ * which handles the ElevenLabs API integration securely and consistently.
  */
 
 export interface ElevenLabsVoice {
@@ -22,17 +19,36 @@ export interface TTSOptions {
   use_speaker_boost?: boolean;
 }
 
+export interface VoiceConfig {
+  voiceId?: string;
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  useSpeakerBoost?: boolean;
+}
+
+export interface ElevenLabsStatus {
+  available: boolean;
+  configured: boolean;
+  voiceConfig: any;
+  status: string;
+}
+
+export interface ElevenLabsQuota {
+  character_count: number;
+  character_limit: number;
+  can_extend_character_limit: boolean;
+  allowed_to_extend_character_limit: boolean;
+  next_character_count_reset_unix: number;
+}
+
 export class ElevenLabsService {
-  private apiKey: string;
-  private baseUrl = 'https://api.elevenlabs.io/v1';
+  private backendUrl: string;
   private audioContext: AudioContext | null = null;
   private currentAudio: HTMLAudioElement | null = null;
 
-  // LISA's voice - using a natural, professional female voice
-  private readonly LISA_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Bella - warm, friendly female voice
-  
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
+  constructor(backendUrl: string = 'http://localhost:3001') {
+    this.backendUrl = backendUrl;
     this.initializeAudioContext();
   }
 
@@ -50,9 +66,9 @@ export class ElevenLabsService {
   }
 
   /**
-   * Convert text to speech using ElevenLabs API
+   * Convert text to speech using backend ElevenLabs service
    */
-  async speak(text: string, options: TTSOptions = {}): Promise<void> {
+  async speak(text: string, voiceConfig?: VoiceConfig): Promise<void> {
     if (!text.trim()) {
       console.warn('⚠️ Empty text provided to ElevenLabs speak()');
       return;
@@ -64,7 +80,7 @@ export class ElevenLabsService {
       // Stop any current audio
       this.stopSpeaking();
 
-      const audioBlob = await this.textToSpeech(text, options);
+      const audioBlob = await this.textToSpeech(text, voiceConfig);
       await this.playAudio(audioBlob);
       
     } catch (error) {
@@ -93,15 +109,29 @@ export class ElevenLabsService {
   }
 
   /**
-   * Get available voices from ElevenLabs
+   * Get ElevenLabs service status from backend
+   */
+  async getStatus(): Promise<ElevenLabsStatus> {
+    try {
+      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/status`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Failed to get ElevenLabs status:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get available voices from backend
    */
   async getVoices(): Promise<ElevenLabsVoice[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/voices`, {
-        headers: {
-          'xi-api-key': this.apiKey,
-        },
-      });
+      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/voices`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -116,26 +146,60 @@ export class ElevenLabsService {
   }
 
   /**
-   * Convert text to speech and return audio blob
+   * Get quota information from backend
    */
-  private async textToSpeech(text: string, options: TTSOptions = {}): Promise<Blob> {
+  async getQuota(): Promise<ElevenLabsQuota> {
+    try {
+      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/quota`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.quota;
+    } catch (error) {
+      console.error('❌ Failed to fetch ElevenLabs quota:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Test ElevenLabs connection through backend
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      console.log('🧪 Testing ElevenLabs connection through backend...');
+      
+      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/test`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.working || false;
+    } catch (error) {
+      console.error('❌ ElevenLabs connection test failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Convert text to speech via backend and return audio blob
+   */
+  private async textToSpeech(text: string, voiceConfig?: VoiceConfig): Promise<Blob> {
     const payload = {
       text,
-      model_id: 'eleven_monolingual_v1',
-      voice_settings: {
-        stability: options.stability ?? 0.75,
-        similarity_boost: options.similarity_boost ?? 0.75,
-        style: options.style ?? 0.0,
-        use_speaker_boost: options.use_speaker_boost ?? true,
-      },
+      voiceConfig: voiceConfig || {}
     };
 
-    const response = await fetch(`${this.baseUrl}/text-to-speech/${this.LISA_VOICE_ID}`, {
+    const response = await fetch(`${this.backendUrl}/voice/elevenlabs/speak`, {
       method: 'POST',
       headers: {
-        'Accept': 'audio/mpeg',
         'Content-Type': 'application/json',
-        'xi-api-key': this.apiKey,
       },
       body: JSON.stringify(payload),
     });
@@ -144,13 +208,14 @@ export class ElevenLabsService {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       try {
         const errorData = await response.json();
-        errorMessage = errorData.detail?.message || errorData.message || errorMessage;
+        errorMessage = errorData.error || errorMessage;
       } catch {
-        // Ignore JSON parse errors
+        // Ignore JSON parse errors for audio responses
       }
       throw new Error(errorMessage);
     }
 
+    // The backend returns audio data directly
     return await response.blob();
   }
 
@@ -188,51 +253,13 @@ export class ElevenLabsService {
     });
   }
 
-  /**
-   * Test ElevenLabs connection and voice
-   */
-  async testConnection(): Promise<boolean> {
-    try {
-      console.log('🧪 Testing ElevenLabs connection...');
-      await this.speak('Hello, this is a test of the ElevenLabs voice service.');
-      return true;
-    } catch (error) {
-      console.error('❌ ElevenLabs connection test failed:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get quota information
-   */
-  async getQuota(): Promise<any> {
-    try {
-      const response = await fetch(`${this.baseUrl}/user/subscription`, {
-        headers: {
-          'xi-api-key': this.apiKey,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('❌ Failed to fetch ElevenLabs quota:', error);
-      throw error;
-    }
-  }
 }
 
-// Factory function to create ElevenLabs service with API key from environment
-export const createElevenLabsService = (): ElevenLabsService | null => {
-  const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-  
-  if (!apiKey) {
-    console.warn('⚠️ VITE_ELEVENLABS_API_KEY not found. ElevenLabs service disabled.');
-    return null;
-  }
-
-  return new ElevenLabsService(apiKey);
+// Factory function to create ElevenLabs service
+export const createElevenLabsService = (backendUrl?: string): ElevenLabsService => {
+  const baseUrl = backendUrl || import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  return new ElevenLabsService(baseUrl);
 };
+
+// Default instance
+export const elevenLabsService = createElevenLabsService();

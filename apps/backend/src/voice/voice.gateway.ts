@@ -258,7 +258,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     // Could initialize conversation state or send welcome message
     client.emit('voice-response', {
       response: "Great! I'm listening continuously now. ",
-      shouldSpeak: true,
+      shouldSpeak: process.env.AI_RESPONSE_STYLE !== 'text_only',
       action: 'conversation_started'
     });
   }
@@ -272,7 +272,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     this.voiceService.naturalConversationService?.clearSession(client.id);
     client.emit('voice-response', {
       response: "Thanks for chatting with me! Feel free to start a new conversation anytime.",
-      shouldSpeak: true,
+      shouldSpeak: process.env.AI_RESPONSE_STYLE !== 'text_only',
       action: 'conversation_ended'
     });
   }

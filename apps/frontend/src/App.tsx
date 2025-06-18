@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -15,6 +15,8 @@ import {
   CssBaseline,
   useTheme,
   useMediaQuery,
+  Tooltip,
+  Chip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -23,13 +25,17 @@ import {
   Assignment as AssignmentIcon,
   Analytics as AnalyticsIcon,
   Assessment as ReportsIcon,
+  RecordVoiceOver as VoiceIcon,
+  Architecture as TechStackIcon,
 } from '@mui/icons-material';
 import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
 import ReportsPage from './pages/ReportsPage';
+// TechStackPage will be loaded lazily
 import LISAInterface from './components/LISAInterface';
+import EnhancedVoiceInterface from './components/EnhancedVoiceInterface';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider } from './contexts/NotificationContext';
 
@@ -41,10 +47,14 @@ const menuItems = [
   { path: '/orders', label: 'Orders', icon: <AssignmentIcon /> },
   { path: '/reports', label: 'Reports & Analytics', icon: <ReportsIcon /> },
   { path: '/voice-test', label: 'Voice Test', icon: <AnalyticsIcon /> },
+  { path: '/tech-stack', label: 'Tech Stack', icon: <TechStackIcon /> },
 ];
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [useEnhancedVoice, setUseEnhancedVoice] = useState(
+    localStorage.getItem('useEnhancedVoice') === 'true'
+  );
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -59,6 +69,12 @@ function App() {
     if (isMobile) {
       setMobileOpen(false);
     }
+  };
+
+  const toggleVoiceInterface = () => {
+    const newValue = !useEnhancedVoice;
+    setUseEnhancedVoice(newValue);
+    localStorage.setItem('useEnhancedVoice', newValue.toString());
   };
 
   const drawer = (
@@ -150,6 +166,25 @@ function App() {
             <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
               Welcome to Glass OMS
             </Typography>
+            
+            {/* Voice Interface Toggle */}
+            {import.meta.env.VITE_ENABLE_VOICE === 'true' && (
+              <Tooltip title={`Switch to ${useEnhancedVoice ? 'Standard' : 'Enhanced'} Voice Interface`}>
+                <Chip
+                  icon={<VoiceIcon />}
+                  label={useEnhancedVoice ? 'Enhanced' : 'Standard'}
+                  onClick={toggleVoiceInterface}
+                  variant={useEnhancedVoice ? 'filled' : 'outlined'}
+                  color={useEnhancedVoice ? 'secondary' : 'default'}
+                  size="small"
+                  sx={{ 
+                    color: useEnhancedVoice ? 'white' : 'inherit',
+                    '&:hover': { cursor: 'pointer' }
+                  }}
+                />
+              </Tooltip>
+            )}
+            
             <AnalyticsIcon />
           </Box>
         </Toolbar>
@@ -206,12 +241,19 @@ function App() {
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/voice-test" element={<VoiceTestPage />} />
+            <Route path="/tech-stack" element={
+              <Suspense fallback={<div>Loading...</div>}>
+                {React.createElement(React.lazy(() => import('./pages/TechStackPage')))}
+              </Suspense>
+            } />
           </Routes>
         </ErrorBoundary>
       </Box>
 
       {/* LISA Voice Interface - Fixed position overlay */}
-      <LISAInterface />
+      {import.meta.env.VITE_ENABLE_VOICE === 'true' && (
+        useEnhancedVoice ? <EnhancedVoiceInterface /> : <LISAInterface />
+      )}
     </Box>
   </NotificationProvider>
   );

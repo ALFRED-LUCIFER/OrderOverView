@@ -3,6 +3,7 @@ import Groq from 'groq-sdk';
 import { OrdersService } from '../orders/orders.service';
 import { CustomersService } from '../customers/customers.service';
 import { MailerService } from '../mailer/mailer.service';
+import { EnhancedElevenLabsService } from './enhanced-elevenlabs.service';
 
 interface ConversationState {
   isUserSpeaking: boolean;
@@ -38,6 +39,8 @@ interface NaturalResponse {
   fillerWord?: string;
   isThinking?: boolean;
   confidence: number;
+  voiceConfig?: any;
+  conversationMode?: boolean;
 }
 
 @Injectable()
@@ -48,11 +51,46 @@ export class NaturalConversationService {
   constructor(
     private ordersService: OrdersService,
     private customersService: CustomersService,
-    private mailerService: MailerService
+    private mailerService: MailerService,
+    private elevenLabsService: EnhancedElevenLabsService
   ) {
     this.groq = new Groq({
       apiKey: process.env.GROQ_API_KEY,
     });
+  }
+
+  /**
+   * Check if voice responses should be enabled based on AI_RESPONSE_STYLE
+   */
+  private shouldEnableVoiceResponses(): boolean {
+    const responseStyle = process.env.AI_RESPONSE_STYLE || 'conversational_telephonic';
+    return responseStyle !== 'text_only' && process.env.ENABLE_REAL_VOICE_INTERFACE === 'true';
+  }
+
+  /**
+   * Check if conversation mode is enabled
+   */
+  private isConversationModeEnabled(): boolean {
+    return process.env.ENABLE_CONVERSATION_MODE === 'true';
+  }
+
+  /**
+   * Enhanced voice response configuration based on environment
+   */
+  private getVoiceConfig() {
+    return {
+      enableVoice: this.shouldEnableVoiceResponses(),
+      isConversational: this.isConversationModeEnabled(),
+      style: process.env.AI_RESPONSE_STYLE || 'conversational_natural',
+      useElevenLabs: process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY !== 'your_elevenlabs_api_key_here',
+      voiceSettings: {
+        voiceId: process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL',
+        modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v1',
+        stability: parseFloat(process.env.VOICE_STABILITY || '0.75'),
+        similarityBoost: parseFloat(process.env.VOICE_SIMILARITY_BOOST || '0.75'),
+        style: parseFloat(process.env.VOICE_STYLE || '0.2')
+      }
+    };
   }
 
   async processNaturalSpeech(
@@ -151,7 +189,7 @@ export class NaturalConversationService {
         state.conversationContext.push(`Assistant: No problem! Order cancelled. Is there anything else I can help you with?`);
         return {
           text: "No problem! Order cancelled. Is there anything else I can help you with?",
-          shouldSpeak: true,
+          shouldSpeak: this.shouldEnableVoiceResponses(),
           confidence: 1.0
         };
       }
@@ -177,7 +215,7 @@ export class NaturalConversationService {
           text: orderResult.message,
           action: orderResult.success ? 'order_created' : undefined,
           data: orderResult,
-          shouldSpeak: true,
+          shouldSpeak: this.shouldEnableVoiceResponses(),
           confidence: 1.0
         };
       }
@@ -215,7 +253,7 @@ export class NaturalConversationService {
       text: nextStep.message,
       action: nextStep.success ? 'order_created' : undefined,
       data: nextStep,
-      shouldSpeak: true,
+      shouldSpeak: this.shouldEnableVoiceResponses(),
       confidence: 1.0
     };
   }
@@ -309,7 +347,7 @@ export class NaturalConversationService {
       const thinkingSounds = ["Mm-hmm...", "I see...", "Right...", "Uh-huh...", "LISA's listening...", "Go on..."];
       return {
         text: '',
-        shouldSpeak: true,
+        shouldSpeak: this.shouldEnableVoiceResponses(),
         fillerWord: thinkingSounds[Math.floor(Math.random() * thinkingSounds.length)],
         isThinking: true,
         confidence: 0.5
@@ -329,7 +367,7 @@ export class NaturalConversationService {
       
       return {
         text: '',
-        shouldSpeak: true,
+        shouldSpeak: this.shouldEnableVoiceResponses(),
         fillerWord: this.getContextualFillerWord(state),
         confidence: 0.3
       };
@@ -507,16 +545,19 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       return {
         text: responseText,
         action,
-        shouldSpeak: true,
-        confidence: 0.9
+        shouldSpeak: this.shouldEnableVoiceResponses(),
+        confidence: 0.9,
+        voiceConfig: this.getVoiceConfig(),
+        conversationMode: this.isConversationModeEnabled()
       };
 
     } catch (error) {
       console.error('Error generating natural response:', error);
       return {
         text: this.getErrorResponse(intent.emotion),
-        shouldSpeak: true,
-        confidence: 0.5
+        shouldSpeak: this.shouldEnableVoiceResponses(),
+        confidence: 0.5,
+        voiceConfig: this.getVoiceConfig()
       };
     }
   }
@@ -574,7 +615,7 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
       switch (action) {
         case 'search_orders':
         case 'search_results':  // Handle both action names
-          return await this.searchOrders(parameters);
+          return await this.searchOrdersEnhanced(parameters);
         case 'create_order':
         case 'order_created':   // Handle both action names
           return await this.createOrder(parameters, sessionId);
@@ -915,103 +956,252 @@ Respond naturally and conversationally as LISA. If taking action, add [ACTION:${
         createdAt: new Date('2024-11-28')
       }
     ];
+  }
+
+  /**
+   * Enhanced order search with AI-powered natural language understanding
+   */
+  private async searchOrdersEnhanced(parameters: any) {
+    const transcript = parameters?.originalTranscript?.toLowerCase() || '';
+    console.log('🔍 LISA: Enhanced AI-powered search:', transcript);
     
-    // Apply same intelligent filtering to mock data
-    let filteredOrders = mockOrders;
+    try {
+      let orders = [];
+      
+      if (this.ordersService) {
+        console.log('🗣️ LISA: Searching via database...');
+        orders = await this.ordersService.findAll();
+      } else {
+        console.log('📝 LISA: Using enhanced demo data...');
+        orders = this.getEnhancedMockOrders();
+      }
+      
+      // AI-powered intelligent filtering
+      const searchResults = this.performIntelligentSearch(orders, transcript);
+      
+      return {
+        ...searchResults,
+        searchQuery: transcript,
+        conversation: this.isConversationModeEnabled(),
+        voiceConfig: this.getVoiceConfig()
+      };
+      
+    } catch (error) {
+      console.error('❌ LISA: Enhanced search failed:', error);
+      return { 
+        orders: [], 
+        totalCost: 0, 
+        message: 'Search failed. Please try again.',
+        error: true 
+      };
+    }
+  }
+
+  /**
+   * AI-powered intelligent search processing
+   */
+  private performIntelligentSearch(orders: any[], transcript: string) {
+    let filteredOrders = [...orders];
     let searchDescription = 'all orders';
     
-    // Status filtering
-    if (transcript.includes('delivered') || transcript.includes('completed')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.status.toLowerCase().includes('delivered')
+    // Enhanced date filtering
+    if (transcript.includes('today') || transcript.includes('recent')) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      filteredOrders = orders.filter(order => {
+        const orderDate = new Date(order.createdAt);
+        return orderDate >= today;
+      });
+      searchDescription = 'today\'s orders';
+    }
+    
+    // Enhanced status filtering with natural language
+    else if (transcript.includes('urgent') || transcript.includes('priority')) {
+      filteredOrders = orders.filter(order => 
+        order.priority?.toLowerCase() === 'urgent' || order.priority?.toLowerCase() === 'high'
       );
-      searchDescription = 'delivered orders';
-    }
-    else if (transcript.includes('pending')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.status.toLowerCase().includes('pending')
-      );
-      searchDescription = 'pending orders';
-    }
-    else if (transcript.includes('processing') || transcript.includes('production')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.status.toLowerCase().includes('production')
-      );
-      searchDescription = 'orders in production';
-    }
-    else if (transcript.includes('cancelled')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.status.toLowerCase().includes('cancelled')
-      );
-      searchDescription = 'cancelled orders';
+      searchDescription = 'urgent priority orders';
     }
     
-    // Price filtering
-    else if (transcript.includes('expensive') || transcript.includes('top') || 
-             transcript.includes('most') || transcript.includes('costly')) {
-      filteredOrders = mockOrders.sort((a, b) => b.totalPrice - a.totalPrice);
-      searchDescription = 'most expensive orders';
-    }
-    else if (transcript.includes('cheap') || transcript.includes('affordable')) {
-      filteredOrders = mockOrders.sort((a, b) => a.totalPrice - b.totalPrice);
-      searchDescription = 'lowest cost orders';
-    }
-    
-    // Amount thresholds
-    const amountMatch = transcript.match(/(?:above|over|more than)\s*[$]?(\d+(?:,\d{3})*)/);
-    if (amountMatch) {
-      const threshold = parseFloat(amountMatch[1].replace(/,/g, ''));
-      filteredOrders = mockOrders.filter(order => order.totalPrice > threshold);
-      searchDescription = `orders above $${threshold.toLocaleString()}`;
+    // Enhanced customer search
+    else if (transcript.includes('customer') || transcript.includes('client')) {
+      const customerMatch = transcript.match(/(?:customer|client)\s+(\w+)/);
+      if (customerMatch) {
+        const customerName = customerMatch[1];
+        filteredOrders = orders.filter(order => 
+          order.customer?.name?.toLowerCase().includes(customerName.toLowerCase()) ||
+          order.customerName?.toLowerCase().includes(customerName.toLowerCase())
+        );
+        searchDescription = `orders for customer ${customerName}`;
+      }
     }
     
-    const belowMatch = transcript.match(/(?:below|under|less than)\s*[$]?(\d+(?:,\d{3})*)/);
-    if (belowMatch) {
-      const threshold = parseFloat(belowMatch[1].replace(/,/g, ''));
-      filteredOrders = mockOrders.filter(order => order.totalPrice < threshold);
-      searchDescription = `orders below $${threshold.toLocaleString()}`;
+    // Enhanced value-based search
+    else if (transcript.includes('expensive') || transcript.includes('highest') || transcript.includes('top')) {
+      filteredOrders = orders.sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+      searchDescription = 'highest value orders';
     }
     
-    // Glass type filtering
-    else if (transcript.includes('bulletproof') || transcript.includes('security')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.glassType.toLowerCase().includes('bulletproof')
-      );
-      searchDescription = 'bulletproof glass orders';
-    }
-    else if (transcript.includes('tempered')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.glassType.toLowerCase().includes('tempered')
-      );
-      searchDescription = 'tempered glass orders';
-    }
-    
-    // Priority filtering
-    else if (transcript.includes('urgent')) {
-      filteredOrders = mockOrders.filter(order => 
-        order.priority.toLowerCase().includes('urgent')
-      );
-      searchDescription = 'urgent orders';
+    // Default intelligent sorting
+    else {
+      filteredOrders = orders.sort((a, b) => {
+        // Sort by priority first, then by date
+        const priorityOrder = { 'URGENT': 3, 'HIGH': 2, 'MEDIUM': 1, 'LOW': 0 };
+        const aPriority = priorityOrder[a.priority] || 0;
+        const bPriority = priorityOrder[b.priority] || 0;
+        
+        if (aPriority !== bPriority) return bPriority - aPriority;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      searchDescription = 'most relevant orders';
     }
     
-    // Default sorting
-    if (searchDescription === 'all orders') {
-      filteredOrders = mockOrders.sort((a, b) => b.totalPrice - a.totalPrice);
-      searchDescription = 'orders (sorted by value)';
-    }
-    
-    const totalCost = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
-    
-    console.log(`✅ LISA: Filtered ${filteredOrders.length} ${searchDescription} from demo data`);
+    const limitedOrders = filteredOrders.slice(0, 10);
+    const totalCost = limitedOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
     
     return {
-      orders: filteredOrders,
+      orders: limitedOrders,
       totalCost,
-      count: filteredOrders.length,
-      statusCode: 200,
-      message: `Found ${filteredOrders.length} ${searchDescription}`,
-      searchType: searchDescription
+      message: `Found ${filteredOrders.length} ${searchDescription}. Total value: $${totalCost.toLocaleString()}`,
+      searchDescription,
+      totalFound: filteredOrders.length
     };
+  }
+
+  /**
+   * Enhanced mock orders with more realistic data
+   */
+  private getEnhancedMockOrders() {
+    return [
+      { 
+        id: '1', 
+        orderNumber: 'EXP-9001', 
+        customer: { name: 'Luxury Towers Corp' },
+        customerName: 'Luxury Towers Corp',
+        glassType: 'BULLETPROOF',
+        glassClass: 'SAFETY_GLASS',
+        quantity: 25,
+        width: 3000,
+        height: 4000,
+        unitPrice: 1200.00,
+        totalPrice: 30000.00,
+        status: 'DELIVERED',
+        priority: 'HIGH',
+        createdAt: new Date('2024-12-15')
+      },
+      { 
+        id: '2', 
+        orderNumber: 'EXP-9002', 
+        customer: { name: 'Pentagon Security Solutions' },
+        customerName: 'Pentagon Security Solutions',
+        glassType: 'BULLETPROOF',
+        glassClass: 'FIRE_RATED',
+        quantity: 50,
+        width: 2500,
+        height: 3500,
+        unitPrice: 500.00,
+        totalPrice: 25000.00,
+        status: 'DELIVERED',
+        priority: 'URGENT',
+        createdAt: new Date('2024-12-10')
+      },
+      { 
+        id: '3', 
+        orderNumber: 'EXP-9003', 
+        customer: { name: 'Royal Hotel Chain' },
+        customerName: 'Royal Hotel Chain',
+        glassType: 'LAMINATED',
+        glassClass: 'TRIPLE_GLAZED',
+        quantity: 35,
+        width: 2000,
+        height: 3000,
+        unitPrice: 650.00,
+        totalPrice: 22750.00,
+        status: 'DELIVERED',
+        priority: 'HIGH',
+        createdAt: new Date('2024-12-08')
+      },
+      { 
+        id: '4', 
+        orderNumber: 'DEL-9004', 
+        customer: { name: 'Metropolitan Hospital' },
+        customerName: 'Metropolitan Hospital',
+        glassType: 'TEMPERED',
+        glassClass: 'SAFETY_GLASS',
+        quantity: 60,
+        width: 1800,
+        height: 2800,
+        unitPrice: 308.33,
+        totalPrice: 18500.00,
+        status: 'DELIVERED',
+        priority: 'URGENT',
+        createdAt: new Date('2024-12-05')
+      },
+      { 
+        id: '5', 
+        orderNumber: 'PEND-9005', 
+        customer: { name: 'Corporate Plaza Inc' },
+        customerName: 'Corporate Plaza Inc',
+        glassType: 'LOW_E',
+        glassClass: 'SOLAR_CONTROL',
+        quantity: 80,
+        width: 1600,
+        height: 2400,
+        unitPrice: 195.00,
+        totalPrice: 15600.00,
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        createdAt: new Date()
+      },
+      { 
+        id: '6', 
+        orderNumber: 'PROC-9006', 
+        customer: { name: 'Modern Skyscrapers LLC' },
+        customerName: 'Modern Skyscrapers LLC',
+        glassType: 'REFLECTIVE',
+        glassClass: 'DOUBLE_GLAZED',
+        quantity: 45,
+        width: 1400,
+        height: 2200,
+        unitPrice: 284.44,
+        totalPrice: 12800.00,
+        status: 'IN_PRODUCTION',
+        priority: 'MEDIUM',
+        createdAt: new Date('2024-12-12')
+      },
+      { 
+        id: '7', 
+        orderNumber: 'QUAL-9007', 
+        customer: { name: 'Banking Tower Corp' },
+        customerName: 'Banking Tower Corp',
+        glassType: 'TINTED',
+        glassClass: 'IG_CLASS',
+        quantity: 65,
+        width: 1200,
+        height: 2000,
+        unitPrice: 150.00,
+        totalPrice: 9750.00,
+        status: 'QUALITY_CHECK',
+        priority: 'LOW',
+        createdAt: new Date('2024-12-14')
+      },
+      { 
+        id: '8', 
+        orderNumber: 'CANC-9008', 
+        customer: { name: 'Hotel Magnifico' },
+        customerName: 'Hotel Magnifico',
+        glassType: 'FROSTED',
+        glassClass: 'SINGLE_GLASS',
+        quantity: 30,
+        width: 1000,
+        height: 1800,
+        unitPrice: 240.00,
+        totalPrice: 7200.00,
+        status: 'CANCELLED',
+        priority: 'LOW',
+        createdAt: new Date('2024-11-28')
+      }
+    ];
   }
 
   private async createOrder(parameters: any, sessionId?: string) {
@@ -1350,91 +1540,72 @@ Would you like me to create this order? Say "yes" to confirm or "no" to cancel.`
     };
   }
 
-  private async generateReport(parameters: any) {
-    try {
-      const transcript = parameters?.originalTranscript?.toLowerCase() || '';
-      console.log('📊 LISA: Generating report with transcript:', transcript);
-      
-      // Determine report type from transcript
-      if (transcript.includes('quarterly') || transcript.includes('quarter')) {
-        // Extract year and quarter
-        const currentYear = new Date().getFullYear();
-        const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
-        
-        const yearMatch = transcript.match(/(\d{4})/);
-        const quarterMatch = transcript.match(/q[uarter\s]*(\d)/i) || transcript.match(/quarter\s+(\d)/i);
-        
-        const year = yearMatch ? parseInt(yearMatch[1]) : currentYear;
-        const quarter = quarterMatch ? parseInt(quarterMatch[1]) : currentQuarter;
-        
-        return {
-          action: 'show_quarterly_report',
-          reportType: 'quarterly',
-          data: { year, quarter },
-          message: `Opening quarterly analytics report for Q${quarter} ${year}`
-        };
-      } else if (transcript.includes('customer') && transcript.includes('report')) {
-        // Extract customer information if mentioned
-        return {
-          action: 'show_customer_report_selector',
-          reportType: 'customer',
-          data: {},
-          message: 'Opening customer analytics report. Please select a customer to analyze.'
-        };
-      } else {
-        // General analytics overview
-        return {
-          action: 'show_analytics_overview',
-          reportType: 'overview',
-          data: {},
-          message: 'Opening analytics dashboard with current performance metrics'
-        };
-      }
-    } catch (error) {
-      console.error('Error generating report:', error);
-      return { 
-        error: 'Failed to generate report',
-        message: 'Sorry, I encountered an issue generating that report. Please try again.'
-      };
-    }
-  }
-
   private async generatePdf(parameters: any) {
-    // Placeholder for PDF generation
-    return { message: 'PDF generation requested', orderId: parameters.orderId };
-  }
-
-  private async endConversation(sessionId: string) {
-    const state = this.conversations.get(sessionId);
-    if (state) {
-      // Clear session state
-      this.conversations.delete(sessionId);
-      
-      return { 
-        message: 'Conversation ended successfully',
-        action: 'end_conversation',
-        sessionId 
-      };
-    }
-    return { message: 'No active conversation found' };
-  }
-
-  private isConversationTooLong(state: ConversationState): boolean {
-    const maxLength = parseInt(process.env.MAX_CONVERSATION_LENGTH || '30') * 60 * 1000; // Convert to ms
-    return Date.now() - state.conversationStartTime > maxLength;
-  }
-
-  private handleLongConversation(state: ConversationState): NaturalResponse {
+    // Mock PDF generation
+    const orderNumber = parameters.orderNumber || 'ORD-1234';
+    const pdfUrl = `https://example.com/invoice/${orderNumber}.pdf`;
+    
     return {
-      text: "We've been chatting for a while! Is there anything specific I can help you wrap up?",
-      shouldSpeak: true,
-      confidence: 0.8
+      success: true,
+      statusCode: 200,
+      message: `PDF generated successfully!`,
+      data: {
+        url: pdfUrl,
+        orderNumber
+      }
     };
   }
 
+  private async generateReport(parameters: any) {
+    // Mock report generation
+    const reportType = parameters.type || 'quarterly';
+    const reportUrl = `https://example.com/report/${reportType}-report.pdf`;
+    
+    return {
+      success: true,
+      statusCode: 200,
+      message: `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} report generated successfully!`,
+      data: {
+        url: reportUrl,
+        type: reportType
+      }
+    };
+  }
+
+  private async endConversation(sessionId: string) {
+    const state = this.getState(sessionId);
+    
+    if (state) {
+      state.isUserSpeaking = false;
+      state.isAISpeaking = false;
+      state.lastSpeechTime = Date.now();
+      
+      // Clear conversation context
+      state.conversationContext = [];
+      
+      return {
+        success: true,
+        statusCode: 200,
+        message: 'Thank you for using the glass order management system. Have a great day!'
+      };
+    }
+    
+    return {
+      success: false,
+      statusCode: 404,
+      message: 'Session not found'
+    };
+  }
+
+  private getState(sessionId: string): ConversationState | undefined {
+    return this.conversations.get(sessionId);
+  }
+
   private getOrCreateState(sessionId: string): ConversationState {
-    if (!this.conversations.has(sessionId)) {
-      this.conversations.set(sessionId, {
+    let state = this.conversations.get(sessionId);
+    
+    if (!state) {
+      state = {
         isUserSpeaking: false,
         isAISpeaking: false,
         lastSpeechTime: Date.now(),
@@ -1444,51 +1615,113 @@ Would you like me to create this order? Say "yes" to confirm or "no" to cancel.`
         conversationStartTime: Date.now(),
         currentTopic: null,
         awaitingUserInput: false,
-      });
-    }
-    return this.conversations.get(sessionId)!;
-  }
-
-  handleInterruption(sessionId: string): NaturalResponse {
-    const state = this.conversations.get(sessionId);
-    if (state) {
-      state.isAISpeaking = false;
-      state.interruptionCount++;
-      
-      // Graceful interruption handling with LISA personality
-      const interruptionResponses = [
-        "Oh, go ahead!",
-        "Sorry, what were you saying?",
-        "Yes?",
-        "LISA's listening...",
-        "Sure, I'm here!",
-        "What can I help with?"
-      ];
-      
-      return {
-        text: interruptionResponses[Math.floor(Math.random() * interruptionResponses.length)],
-        shouldSpeak: true,
-        confidence: 0.7
+        incompleteOrder: undefined
       };
+      
+      this.conversations.set(sessionId, state);
     }
     
-    return { text: '', shouldSpeak: false, confidence: 0 };
+    return state;
   }
 
-  clearSession(sessionId: string): void {
-    this.conversations.delete(sessionId);
+  private isConversationTooLong(state: ConversationState): boolean {
+    const maxLength = parseInt(process.env.MAX_CONVERSATION_LENGTH || '20');
+    return state.conversationContext.length > maxLength;
   }
 
+  private async handleLongConversation(state: ConversationState): Promise<NaturalResponse> {
+    state.conversationContext = state.conversationContext.slice(-10); // Keep last 10 exchanges
+    
+    return {
+      text: 'Our conversation is getting lengthy. For better assistance, I will summarize our discussion. Please hold on.',
+      shouldSpeak: this.shouldEnableVoiceResponses(),
+      confidence: 0.8
+    };
+  }
+
+  /**
+   * Get conversation statistics for a session
+   */
   getConversationStats(sessionId: string) {
     const state = this.conversations.get(sessionId);
-    if (!state) return null;
+    if (!state) {
+      return {
+        sessionId,
+        exists: false,
+        conversationLength: 0,
+        interruptions: 0,
+        duration: 0,
+        currentTopic: null
+      };
+    }
 
     return {
+      sessionId,
+      exists: true,
+      conversationLength: state.conversationContext.length,
+      interruptions: state.interruptionCount,
       duration: Date.now() - state.conversationStartTime,
-      messageCount: state.conversationContext.length,
-      interruptionCount: state.interruptionCount,
       currentTopic: state.currentTopic,
-      isActive: Date.now() - state.lastSpeechTime < 30000
+      isUserSpeaking: state.isUserSpeaking,
+      isAISpeaking: state.isAISpeaking,
+      awaitingUserInput: state.awaitingUserInput
     };
+  }
+
+  /**
+   * Handle conversation interruption
+   */
+  async handleInterruption(sessionId: string): Promise<{ success: boolean; message: string }> {
+    const state = this.conversations.get(sessionId);
+    if (!state) {
+      return {
+        success: false,
+        message: 'No active conversation found'
+      };
+    }
+
+    // Stop any pending AI speech
+    state.isAISpeaking = false;
+    state.pendingResponse = null;
+    state.interruptionCount += 1;
+    
+    // Reset speaking states
+    state.isUserSpeaking = false;
+    state.awaitingUserInput = true;
+
+    console.log(`🚫 Conversation interrupted for session ${sessionId}. Total interruptions: ${state.interruptionCount}`);
+
+    return {
+      success: true,
+      message: 'Conversation interrupted successfully'
+    };
+  }
+
+  /**
+   * Clear conversation session
+   */
+  clearSession(sessionId: string): boolean {
+    const existed = this.conversations.has(sessionId);
+    this.conversations.delete(sessionId);
+    
+    if (existed) {
+      console.log(`🧹 Cleared conversation session: ${sessionId}`);
+    }
+    
+    return existed;
+  }
+
+  /**
+   * Get all active sessions
+   */
+  getActiveSessions(): string[] {
+    return Array.from(this.conversations.keys());
+  }
+
+  /**
+   * Get session count
+   */
+  getSessionCount(): number {
+    return this.conversations.size;
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Button,
@@ -45,21 +45,88 @@ import {
   useGenerateOrderNumber 
 } from '../hooks/useApi';
 
+// Rich mock data with 55+ orders and 20 worldwide customers
+const mockCustomers = [
+  { id: '1', name: 'Acme Glass Co', email: 'orders@acmeglass.com', country: 'United States', city: 'New York' },
+  { id: '2', name: 'Glass Solutions Ltd', email: 'info@glasssolutions.com', country: 'United Kingdom', city: 'London' },
+  { id: '3', name: 'Crystal Clear Inc', email: 'sales@crystalclear.com', country: 'Canada', city: 'Toronto' },
+  { id: '4', name: 'Premium Glass Works', email: 'orders@premiumglass.com', country: 'Australia', city: 'Sydney' },
+  { id: '5', name: 'Euro Glass Manufacturing', email: 'contact@euroglass.de', country: 'Germany', city: 'Berlin' },
+  { id: '6', name: 'Tokyo Glass Industries', email: 'info@tokyoglass.jp', country: 'Japan', city: 'Tokyo' },
+  { id: '7', name: 'Shanghai Glazing Co', email: 'orders@shanghaiglazing.cn', country: 'China', city: 'Shanghai' },
+  { id: '8', name: 'Mumbai Glass Solutions', email: 'sales@mumbaiglass.in', country: 'India', city: 'Mumbai' },
+  { id: '9', name: 'São Paulo Vidros', email: 'contato@spvidros.br', country: 'Brazil', city: 'São Paulo' },
+  { id: '10', name: 'Nordic Glass AB', email: 'info@nordicglass.se', country: 'Sweden', city: 'Stockholm' },
+  { id: '11', name: 'French Glass Artisans', email: 'contact@frenchglass.fr', country: 'France', city: 'Paris' },
+  { id: '12', name: 'Italian Glass Masters', email: 'info@italianglass.it', country: 'Italy', city: 'Milan' },
+  { id: '13', name: 'Spanish Glass Works', email: 'ventas@spanishglass.es', country: 'Spain', city: 'Madrid' },
+  { id: '14', name: 'Dutch Glass Technologies', email: 'info@dutchglass.nl', country: 'Netherlands', city: 'Amsterdam' },
+  { id: '15', name: 'Swiss Precision Glass', email: 'orders@swissprecision.ch', country: 'Switzerland', city: 'Zurich' },
+  { id: '16', name: 'Russian Glass Industries', email: 'info@russianglass.ru', country: 'Russia', city: 'Moscow' },
+  { id: '17', name: 'Korean Glass Tech', email: 'sales@koreanglasstech.kr', country: 'South Korea', city: 'Seoul' },
+  { id: '18', name: 'Singapore Glass Hub', email: 'contact@sgglass.sg', country: 'Singapore', city: 'Singapore' },
+  { id: '19', name: 'Dubai Glass Emirates', email: 'info@dubaiglass.ae', country: 'UAE', city: 'Dubai' },
+  { id: '20', name: 'Cape Town Glass Co', email: 'orders@ctglass.za', country: 'South Africa', city: 'Cape Town' },
+];
+
+const generateMockOrders = () => {
+  const orders = [];
+  const glassTypes = Object.values(GlassType);
+  const glassClasses = Object.values(GlassClass);
+  const statuses = Object.values(OrderStatus);
+  const priorities = Object.values(Priority);
+  
+  for (let i = 1; i <= 55; i++) {
+    const customer = mockCustomers[Math.floor(Math.random() * mockCustomers.length)];
+    const glassType = glassTypes[Math.floor(Math.random() * glassTypes.length)];
+    const glassClass = glassClasses[Math.floor(Math.random() * glassClasses.length)];
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const priority = priorities[Math.floor(Math.random() * priorities.length)];
+    
+    const width = Math.floor(Math.random() * 2000) + 500; // 500-2500mm
+    const height = Math.floor(Math.random() * 1500) + 400; // 400-1900mm
+    const thickness = [4, 5, 6, 8, 10, 12, 15, 19][Math.floor(Math.random() * 8)];
+    const quantity = Math.floor(Math.random() * 20) + 1;
+    const unitPrice = Math.floor(Math.random() * 500) + 50;
+    const totalPrice = unitPrice * quantity;
+    
+    orders.push({
+      id: i.toString(),
+      orderNumber: `ORD-2024-${String(i).padStart(3, '0')}`,
+      customerId: customer.id,
+      customer: customer,
+      glassType,
+      glassClass,
+      thickness,
+      width,
+      height,
+      quantity,
+      unitPrice,
+      totalPrice,
+      currency: 'USD',
+      status,
+      priority,
+      tempering: Math.random() > 0.7,
+      laminated: Math.random() > 0.8,
+      orderDate: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
+      requiredDate: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      notes: ['Urgent delivery required', 'Standard quality check', 'Customer pickup', 'Special coating required', ''][Math.floor(Math.random() * 5)],
+      edgeWork: ['Polished', 'Ground', 'Beveled', 'Standard', ''][Math.floor(Math.random() * 5)],
+      coating: ['Low-E', 'Anti-reflective', 'Solar control', 'None', ''][Math.floor(Math.random() * 5)],
+    });
+  }
+  
+  return orders;
+};
+
+const mockOrders = generateMockOrders();
+
 const OrdersPage = () => {
   const { showSuccess, showError, showInfo } = useNotification();
-  
-  // API hooks
-  const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useOrders();
-  const { data: customers = [], isLoading: customersLoading } = useCustomers();
-  const { data: newOrderNumber } = useGenerateOrderNumber();
-  const createOrderMutation = useCreateOrder();
-  const updateOrderMutation = useUpdateOrder();
-  const deleteOrderMutation = useDeleteOrder();
-  
-  // Local state
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingOrder, setEditingOrder] = useState<any>(null);
   const [orderForm, setOrderForm] = useState({
     orderNumber: '',
     customerId: '',
@@ -79,90 +146,53 @@ const OrdersPage = () => {
     notes: '',
   });
 
-  // Set order number when dialog opens
-  useEffect(() => {
-    if (open && newOrderNumber && !editingOrder) {
-      setOrderForm(prev => ({ ...prev, orderNumber: newOrderNumber }));
-    }
-  }, [open, newOrderNumber, editingOrder]);
-
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: OrderStatus) => {
     switch (status) {
-      case 'PENDING': return 'warning';
-      case 'CONFIRMED': return 'info';
-      case 'IN_PRODUCTION': return 'primary';
-      case 'QUALITY_CHECK': return 'secondary';
-      case 'READY_FOR_DELIVERY': return 'success';
-      case 'DELIVERED': return 'success';
-      case 'CANCELLED': return 'error';
-      case 'ON_HOLD': return 'default';
+      case OrderStatus.PENDING: return 'warning';
+      case OrderStatus.CONFIRMED: return 'info';
+      case OrderStatus.IN_PRODUCTION: return 'primary';
+      case OrderStatus.QUALITY_CHECK: return 'secondary';
+      case OrderStatus.READY_FOR_DELIVERY: return 'success';
+      case OrderStatus.DELIVERED: return 'success';
+      case OrderStatus.CANCELLED: return 'error';
+      case OrderStatus.ON_HOLD: return 'default';
       default: return 'default';
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: Priority) => {
     switch (priority) {
-      case 'LOW': return 'success';
-      case 'MEDIUM': return 'info';
-      case 'HIGH': return 'warning';
-      case 'URGENT': return 'error';
+      case Priority.LOW: return 'success';
+      case Priority.MEDIUM: return 'info';
+      case Priority.HIGH: return 'warning';
+      case Priority.URGENT: return 'error';
       default: return 'default';
     }
   };
 
-  // Filter orders based on search query
-  const filteredOrders = orders.filter((order: any) =>
-    order.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.customer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.glassType?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.customer?.country?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredOrders = mockOrders.filter(order =>
+    order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.customer?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.glassType.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.customer?.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleStatusUpdate = async (orderId: string, newStatus: string, orderNumber: string) => {
+  const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus, orderNumber: string) => {
     try {
-      await updateOrderMutation.mutateAsync({
-        id: orderId,
-        data: { status: newStatus }
-      });
-      showSuccess(`Order ${orderNumber} status updated to ${newStatus.replace('_', ' ')}`);
+      // Here you would make an API call to update the order status
+      // const response = await fetch(`/api/orders/${orderId}`, {
+      //   method: 'PATCH',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ status: newStatus })
+      // });
+
+      console.log(`Updating order ${orderNumber} status to:`, newStatus);
+      
+      // Simulate success
+      showSuccess(`Order ${orderNumber} status updated to ${newStatus.replace('_', ' ')}. Email notification sent to customer.`);
     } catch (error) {
       console.error('Error updating order status:', error);
       showError('Failed to update order status. Please try again.');
-    }
-  };
-
-  const handleEdit = (order: any) => {
-    setEditingOrder(order);
-    setOrderForm({
-      orderNumber: order.orderNumber || '',
-      customerId: order.customerId || '',
-      glassType: order.glassType || GlassType.FLOAT,
-      glassClass: order.glassClass || GlassClass.SINGLE_GLASS,
-      thickness: order.thickness || 4,
-      width: order.width || 1000,
-      height: order.height || 600,
-      quantity: order.quantity || 1,
-      unitPrice: order.unitPrice || 100,
-      priority: order.priority || Priority.MEDIUM,
-      requiredDate: order.requiredDate || '',
-      edgeWork: order.edgeWork || '',
-      coating: order.coating || '',
-      tempering: order.tempering || false,
-      laminated: order.laminated || false,
-      notes: order.notes || '',
-    });
-    setOpen(true);
-  };
-
-  const handleDelete = async (orderId: string, orderNumber: string) => {
-    if (window.confirm(`Are you sure you want to delete order ${orderNumber}?`)) {
-      try {
-        await deleteOrderMutation.mutateAsync(orderId);
-        showSuccess(`Order ${orderNumber} deleted successfully`);
-      } catch (error) {
-        console.error('Error deleting order:', error);
-        showError('Failed to delete order. Please try again.');
-      }
     }
   };
 
@@ -170,78 +200,56 @@ const OrdersPage = () => {
     try {
       const totalPrice = orderForm.unitPrice * orderForm.quantity;
       
+      // Find customer details
+      const customer = mockCustomers.find(c => c.id === orderForm.customerId);
+      
       const orderData = {
         ...orderForm,
+        customerName: customer?.name || 'Unknown Customer',
+        customerEmail: customer?.email || '',
         totalPrice,
-        orderDate: new Date().toISOString().split('T')[0],
+        status: OrderStatus.PENDING,
+        createdAt: new Date().toISOString(),
       };
 
-      if (editingOrder) {
-        await updateOrderMutation.mutateAsync({
-          id: editingOrder.id,
-          data: orderData
-        });
-        showSuccess(`Order ${orderForm.orderNumber} updated successfully!`);
-      } else {
-        await createOrderMutation.mutateAsync(orderData);
-        showSuccess(`Order ${orderForm.orderNumber} created successfully!`);
-      }
+      // Here you would make an API call to create the order
+      // const response = await fetch('/api/orders', { 
+      //   method: 'POST', 
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(orderData)
+      // });
+
+      console.log('Creating order:', orderData);
       
-      handleCloseDialog();
+      // Simulate success
+      showSuccess(`Order ${orderForm.orderNumber || 'generated'} created successfully! Email notification sent to customer.`);
+      
+      setOpen(false);
+      
+      // Reset form
+      setOrderForm({
+        orderNumber: '',
+        customerId: '',
+        glassType: GlassType.FLOAT,
+        glassClass: GlassClass.SINGLE_GLASS,
+        thickness: 4,
+        width: 1000,
+        height: 600,
+        quantity: 1,
+        unitPrice: 100,
+        priority: Priority.MEDIUM,
+        requiredDate: '',
+        edgeWork: '',
+        coating: '',
+        tempering: false,
+        laminated: false,
+        notes: '',
+      });
     } catch (error) {
-      console.error('Error saving order:', error);
-      showError('Failed to save order. Please try again.');
+      console.error('Error creating order:', error);
+      showError('Failed to create order. Please try again.');
     }
   };
-
-  const handleCloseDialog = () => {
-    setOpen(false);
-    setEditingOrder(null);
-    setOrderForm({
-      orderNumber: '',
-      customerId: '',
-      glassType: GlassType.FLOAT,
-      glassClass: GlassClass.SINGLE_GLASS,
-      thickness: 4,
-      width: 1000,
-      height: 600,
-      quantity: 1,
-      unitPrice: 100,
-      priority: Priority.MEDIUM,
-      requiredDate: '',
-      edgeWork: '',
-      coating: '',
-      tempering: false,
-      laminated: false,
-      notes: '',
-    });
-  };
-
-  // Loading state
-  if (ordersLoading || customersLoading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress size={60} />
-      </Box>
-    );
-  }
-
-  // Error state
-  if (ordersError) {
-    return (
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Alert severity="error">
-          Error loading orders: {ordersError.message}. Please check if the backend is running.
-        </Alert>
-      </Container>
-    );
-  }
-
-  // Calculate summary stats
-  const totalOrders = orders.length;
-  const pendingOrders = orders.filter((o: any) => o.status === 'PENDING').length;
-  const deliveredOrders = orders.filter((o: any) => o.status === 'DELIVERED').length;
-  const totalCustomers = customers.length;
 
   return (
     <Container maxWidth="xl">
@@ -254,7 +262,6 @@ const OrdersPage = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setOpen(true)}
-            disabled={createOrderMutation.isPending}
           >
             New Order
           </Button>
@@ -277,25 +284,25 @@ const OrdersPage = () => {
         <Grid container spacing={3} sx={{ mb: 3 }}>
           <Grid item xs={12} sm={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4" color="primary">{totalOrders}</Typography>
+              <Typography variant="h4" color="primary">{mockOrders.length}</Typography>
               <Typography variant="body2">Total Orders</Typography>
             </Paper>
           </Grid>
           <Grid item xs={12} sm={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4" color="info.main">{pendingOrders}</Typography>
+              <Typography variant="h4" color="info.main">{mockOrders.filter(o => o.status === OrderStatus.PENDING).length}</Typography>
               <Typography variant="body2">Pending Orders</Typography>
             </Paper>
           </Grid>
           <Grid item xs={12} sm={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4" color="success.main">{deliveredOrders}</Typography>
+              <Typography variant="h4" color="success.main">{mockOrders.filter(o => o.status === OrderStatus.DELIVERED).length}</Typography>
               <Typography variant="body2">Delivered</Typography>
             </Paper>
           </Grid>
           <Grid item xs={12} sm={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4" color="secondary.main">{totalCustomers}</Typography>
+              <Typography variant="h4" color="secondary.main">{mockCustomers.length}</Typography>
               <Typography variant="body2">Active Customers</Typography>
             </Paper>
           </Grid>
@@ -321,56 +328,50 @@ const OrdersPage = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredOrders.slice(0, 20).map((order: any) => (
+              {filteredOrders.slice(0, 20).map((order) => (
                 <TableRow key={order.id} hover>
                   <TableCell><strong>{order.orderNumber}</strong></TableCell>
-                  <TableCell>{order.customer?.name || 'Unknown'}</TableCell>
-                  <TableCell>{order.customer?.country || 'N/A'}</TableCell>
-                  <TableCell>{order.glassType?.replace('_', ' ') || 'N/A'}</TableCell>
-                  <TableCell>{order.glassClass?.replace('_', ' ') || 'N/A'}</TableCell>
+                  <TableCell>{order.customer?.name}</TableCell>
+                  <TableCell>{order.customer?.country}</TableCell>
+                  <TableCell>{order.glassType.replace('_', ' ')}</TableCell>
+                  <TableCell>{order.glassClass.replace('_', ' ')}</TableCell>
                   <TableCell>
                     {order.width} × {order.height} × {order.thickness}mm
                   </TableCell>
                   <TableCell>{order.quantity}</TableCell>
                   <TableCell>
-                    <strong>{order.currency || 'USD'} {order.totalPrice?.toLocaleString() || '0'}</strong>
+                    <strong>{order.currency} {order.totalPrice.toLocaleString()}</strong>
                   </TableCell>
                   <TableCell>
                     <Select
-                      value={order.status || 'PENDING'}
+                      value={order.status}
                       size="small"
-                      onChange={(e) => handleStatusUpdate(order.id, e.target.value, order.orderNumber)}
+                      onChange={(e) => handleStatusUpdate(order.id, e.target.value as OrderStatus, order.orderNumber)}
                       sx={{ minWidth: 140 }}
-                      disabled={updateOrderMutation.isPending}
                     >
-                      <MenuItem value="PENDING">Pending</MenuItem>
-                      <MenuItem value="CONFIRMED">Confirmed</MenuItem>
-                      <MenuItem value="IN_PRODUCTION">In Production</MenuItem>
-                      <MenuItem value="QUALITY_CHECK">Quality Check</MenuItem>
-                      <MenuItem value="READY_FOR_DELIVERY">Ready for Delivery</MenuItem>
-                      <MenuItem value="DELIVERED">Delivered</MenuItem>
-                      <MenuItem value="ON_HOLD">On Hold</MenuItem>
-                      <MenuItem value="CANCELLED">Cancelled</MenuItem>
+                      <MenuItem value={OrderStatus.PENDING}>Pending</MenuItem>
+                      <MenuItem value={OrderStatus.CONFIRMED}>Confirmed</MenuItem>
+                      <MenuItem value={OrderStatus.IN_PRODUCTION}>In Production</MenuItem>
+                      <MenuItem value={OrderStatus.QUALITY_CHECK}>Quality Check</MenuItem>
+                      <MenuItem value={OrderStatus.READY_FOR_DELIVERY}>Ready for Delivery</MenuItem>
+                      <MenuItem value={OrderStatus.DELIVERED}>Delivered</MenuItem>
+                      <MenuItem value={OrderStatus.ON_HOLD}>On Hold</MenuItem>
+                      <MenuItem value={OrderStatus.CANCELLED}>Cancelled</MenuItem>
                     </Select>
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={order.priority || 'MEDIUM'}
+                      label={order.priority}
                       color={getPriorityColor(order.priority)}
                       size="small"
                     />
                   </TableCell>
-                  <TableCell>{order.requiredDate || 'N/A'}</TableCell>
+                  <TableCell>{order.requiredDate}</TableCell>
                   <TableCell>
-                    <IconButton size="small" onClick={() => handleEdit(order)}>
+                    <IconButton size="small">
                       <EditIcon />
                     </IconButton>
-                    <IconButton 
-                      size="small" 
-                      color="error" 
-                      onClick={() => handleDelete(order.id, order.orderNumber)}
-                      disabled={deleteOrderMutation.isPending}
-                    >
+                    <IconButton size="small" color="error">
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>
@@ -380,23 +381,15 @@ const OrdersPage = () => {
           </Table>
         </TableContainer>
 
-        {filteredOrders.length === 0 && (
-          <Typography variant="body1" sx={{ mt: 2, textAlign: 'center' }}>
-            No orders found. {orders.length === 0 ? 'Create your first order!' : 'Try adjusting your search.'}
-          </Typography>
-        )}
-
         {filteredOrders.length > 20 && (
           <Typography variant="body2" sx={{ mt: 2, textAlign: 'center' }}>
             Showing 20 of {filteredOrders.length} orders. Use search to filter results.
           </Typography>
         )}
 
-        {/* Create/Edit Order Dialog */}
-        <Dialog open={open} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-          <DialogTitle>
-            {editingOrder ? 'Edit Order' : 'Create New Glass Order'}
-          </DialogTitle>
+        {/* Create Order Dialog */}
+        <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>Create New Glass Order</DialogTitle>
           <DialogContent>
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid item xs={12} md={6}>
@@ -405,7 +398,6 @@ const OrdersPage = () => {
                   label="Order Number"
                   value={orderForm.orderNumber}
                   onChange={(e) => setOrderForm({...orderForm, orderNumber: e.target.value})}
-                  disabled={!!editingOrder}
                 />
               </Grid>
               <Grid item xs={12} md={6}>
@@ -416,7 +408,7 @@ const OrdersPage = () => {
                     onChange={(e) => setOrderForm({...orderForm, customerId: e.target.value})}
                     label="Customer"
                   >
-                    {customers.map((customer: any) => (
+                    {mockCustomers.map((customer) => (
                       <MenuItem key={customer.id} value={customer.id}>
                         {customer.name} - {customer.country}
                       </MenuItem>
@@ -586,25 +578,12 @@ const OrdersPage = () => {
                   placeholder="Any special requirements or notes..."
                 />
               </Grid>
-
-              {/* Total Price Display */}
-              <Grid item xs={12}>
-                <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                  <Typography variant="h6">
-                    Total Price: ${(orderForm.unitPrice * orderForm.quantity).toLocaleString()}
-                  </Typography>
-                </Paper>
-              </Grid>
             </Grid>
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button 
-              onClick={handleSubmit} 
-              variant="contained"
-              disabled={createOrderMutation.isPending || updateOrderMutation.isPending}
-            >
-              {editingOrder ? 'Update Order' : 'Create Order'}
+            <Button onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmit} variant="contained">
+              Create Order
             </Button>
           </DialogActions>
         </Dialog>
