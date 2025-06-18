@@ -39,7 +39,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     ipAddress?: string,
     userAgent?: string,
     clientId?: string,
-    timestamp?: number
+    timestamp?: number,
+    isAISpeaking?: boolean,
+    isUserSpeaking?: boolean,
+    lastSpeechTime?: number
   }>();
   private clientsByIP = new Map<string, Set<string>>(); // Track multiple connections from same IP
 
@@ -66,7 +69,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       ipAddress,
       userAgent,
       clientId,
-      timestamp
+      timestamp,
+      isAISpeaking: false,
+      isUserSpeaking: false,
+      lastSpeechTime: connectTime
     });
     
     // Check for multiple connections from same IP (potential duplicate connections)
@@ -130,7 +136,21 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const clientInfo = this.connectedClients.get(client.id);
     if (clientInfo) {
       clientInfo.lastActivity = Date.now();
+      clientInfo.lastSpeechTime = Date.now();
     }
+
+    // Check if LISA is currently speaking - prevent feedback loop
+    if (clientInfo?.isAISpeaking) {
+      console.log(`🚫 LISA: Ignoring voice command while AI is speaking (client: ${client.id})`);
+      return;
+    }
+
+    // Mark user as speaking
+    if (clientInfo) {
+      clientInfo.isUserSpeaking = true;
+    }
+
+    console.log(`🎤 LISA: Processing voice command from ${client.id}: "${data.transcript.substring(0, 50)}${data.transcript.length > 50 ? '...' : ''}"`);
 
     const result = await this.voiceService.processVoiceCommand(
       data.transcript,
@@ -142,6 +162,17 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       }
     );
 
+    // Mark user as done speaking after processing
+    if (clientInfo && data.isEndOfSpeech) {
+      clientInfo.isUserSpeaking = false;
+    }
+
+    // Mark AI as speaking if response should be spoken
+    if (result.shouldSpeak && clientInfo) {
+      clientInfo.isAISpeaking = true;
+      console.log(`🎙️ LISA: Starting to speak to client ${client.id}`);
+    }
+
     client.emit('voice-response', result);
   }
 
@@ -150,6 +181,14 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     @ConnectedSocket() client: Socket,
   ) {
     // Handle user interrupting AI speech
+    const clientInfo = this.connectedClients.get(client.id);
+    if (clientInfo) {
+      clientInfo.isAISpeaking = false;
+      clientInfo.isUserSpeaking = true;
+      clientInfo.lastActivity = Date.now();
+      console.log(`✋ LISA: Voice interruption from client ${client.id}`);
+    }
+
     const result = await this.voiceService.naturalConversationService?.handleInterruption(client.id);
     if (result) {
       client.emit('voice-response', result);
@@ -165,10 +204,37 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const clientInfo = this.connectedClients.get(client.id);
     if (clientInfo) {
       clientInfo.lastActivity = Date.now();
+      
+      // Update speaking state based on status
+      if (data.status === 'speaking') {
+        clientInfo.isAISpeaking = true;
+        console.log(`🎙️ LISA: Client ${client.id} started speaking`);
+      } else if (data.status === 'idle') {
+        clientInfo.isAISpeaking = false;
+        clientInfo.isUserSpeaking = false;
+        console.log(`💤 LISA: Client ${client.id} went idle`);
+      } else if (data.status === 'listening') {
+        clientInfo.isAISpeaking = false;
+        clientInfo.isUserSpeaking = false;
+        console.log(`👂 LISA: Client ${client.id} started listening`);
+      }
     }
     
     // Update conversation state based on voice activity
-    console.log(`Client ${client.id} voice status: ${data.status}`);
+    console.log(`📊 LISA: Client ${client.id} voice status: ${data.status}`);
+  }
+
+  @SubscribeMessage('speech-ended')
+  async handleSpeechEnded(
+    @ConnectedSocket() client: Socket,
+  ) {
+    // Handle when AI speech has finished
+    const clientInfo = this.connectedClients.get(client.id);
+    if (clientInfo) {
+      clientInfo.isAISpeaking = false;
+      clientInfo.lastActivity = Date.now();
+      console.log(`🔚 LISA: Speech ended for client ${client.id}`);
+    }
   }
 
   @SubscribeMessage('ping')
@@ -191,7 +257,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     console.log(`Client ${client.id} started conversation mode`);
     // Could initialize conversation state or send welcome message
     client.emit('voice-response', {
-      response: "Great! I'm listening continuously now. Just talk to me naturally, and say 'stop' or 'finish' when you're done.",
+      response: "Great! I'm listening continuously now. ",
       shouldSpeak: true,
       action: 'conversation_started'
     });
@@ -298,68 +364,5 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   onModuleInit() {
     this.startCleanupInterval();
     console.log('🔧 LISA Voice Gateway initialized with connection monitoring');
-  }
-
-  // Utility method to disconnect all connections from a specific IP
-  disconnectAllFromIP(ipAddress: string): number {
-    const ipConnections = this.clientsByIP.get(ipAddress);
-    if (!ipConnections) return 0;
-    
-    let disconnectedCount = 0;
-    ipConnections.forEach(clientId => {
-      console.log(`🔌 Force disconnecting LISA client ${clientId} from IP ${ipAddress}`);
-      const socket = this.server.sockets.sockets.get(clientId);
-      if (socket) {
-        socket.emit('force_disconnect', { reason: 'Administrative disconnect' });
-        socket.disconnect(true);
-        disconnectedCount++;
-      }
-      this.connectedClients.delete(clientId);
-    });
-    
-    this.clientsByIP.delete(ipAddress);
-    console.log(`🧹 Disconnected ${disconnectedCount} LISA connections from IP ${ipAddress}`);
-    return disconnectedCount;
-  }
-
-  // Method to get detailed connection info for debugging
-  getDetailedConnectionInfo() {
-    const info = {
-      totalConnections: this.connectedClients.size,
-      connectionsPerIP: {},
-      oldestConnection: null as any,
-      newestConnection: null as any
-    };
-
-    let oldestTime = Date.now();
-    let newestTime = 0;
-
-    this.connectedClients.forEach((clientInfo, clientId) => {
-      const ip = clientInfo.ipAddress || 'unknown';
-      if (!info.connectionsPerIP[ip]) {
-        info.connectionsPerIP[ip] = [];
-      }
-      
-      info.connectionsPerIP[ip].push({
-        clientId,
-        socketId: clientId,
-        connectTime: new Date(clientInfo.connectTime).toISOString(),
-        lastActivity: new Date(clientInfo.lastActivity).toISOString(),
-        clientIdAuth: clientInfo.clientId,
-        duration: Math.round((Date.now() - clientInfo.connectTime) / 1000)
-      });
-
-      if (clientInfo.connectTime < oldestTime) {
-        oldestTime = clientInfo.connectTime;
-        info.oldestConnection = { clientId, connectTime: new Date(clientInfo.connectTime).toISOString() };
-      }
-      
-      if (clientInfo.connectTime > newestTime) {
-        newestTime = clientInfo.connectTime;
-        info.newestConnection = { clientId, connectTime: new Date(clientInfo.connectTime).toISOString() };
-      }
-    });
-
-    return info;
   }
 }

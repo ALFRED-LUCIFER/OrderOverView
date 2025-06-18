@@ -18,7 +18,11 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  Card,
+  CardContent,
+  Grid,
+  Divider
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
@@ -133,6 +137,8 @@ export const LISAInterface: React.FC = () => {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [totalCost, setTotalCost] = useState(0);
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
   const [audioInitialized, setAudioInitialized] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -215,6 +221,11 @@ export const LISAInterface: React.FC = () => {
           setTotalCost(data.data.totalCost || 0);
           setSearchDialogOpen(true);
         }
+      } else if (data.action === 'search_customers' || data.action === 'customer_search') {
+        if (data.data?.customers) {
+          setCustomerResults(data.data.customers);
+          setCustomerDialogOpen(true);
+        }
       } else if (data.action === 'CREATE_ORDER' || data.action === 'order_created') {
         if (data.data?.id) {
           setSnackbarMessage(`✅ Order created with ID: ${data.data.id}`);
@@ -239,6 +250,14 @@ export const LISAInterface: React.FC = () => {
         // Navigate to reports page
         window.location.href = '/reports';
         setSnackbarMessage('📈 Opening analytics overview dashboard...');
+        setSnackbarOpen(true);
+      } else if (data.action === 'send_email' || data.action === 'send_test_email') {
+        // Handle email sending actions
+        if (data.data?.success) {
+          setSnackbarMessage(`📧 ${data.data.message || 'Email sent successfully!'}`);
+        } else {
+          setSnackbarMessage(`⚠️ Email failed: ${data.data?.message || 'Unknown error'}`);
+        }
         setSnackbarOpen(true);
       } else if (data.action === 'end_conversation') {
         endConversation();
@@ -304,9 +323,21 @@ export const LISAInterface: React.FC = () => {
             if (current.isFinal) {
               setTranscript(transcriptText);
               setInterimTranscript('');
+              
+              // Notify backend that user finished speaking
+              if (socketRef.current) {
+                socketRef.current.emit('voice-status', { status: 'idle' });
+              }
+              
               sendVoiceCommand(transcriptText, true, false);
             } else {
               setInterimTranscript(transcriptText);
+              
+              // Notify backend that user is speaking (first interim result)
+              if (socketRef.current && !transcript && !interimTranscript) {
+                socketRef.current.emit('voice-status', { status: 'listening' });
+              }
+              
               if (useNaturalConversation && isInConversation) {
                 sendVoiceCommand(transcriptText, false, true);
               }
@@ -394,8 +425,21 @@ export const LISAInterface: React.FC = () => {
       };
 
       setStatus('speaking');
+      
+      // Notify backend that AI is speaking
+      if (socketRef.current) {
+        socketRef.current.emit('voice-status', { status: 'speaking' });
+      }
+      
       await audioService.speak(text, options);
+      
       setStatus('idle');
+      
+      // Notify backend that AI finished speaking
+      if (socketRef.current) {
+        socketRef.current.emit('speech-ended');
+        socketRef.current.emit('voice-status', { status: 'idle' });
+      }
     } catch (error) {
       console.error('🎤 LISA speech error:', error);
       setStatus('idle');
@@ -433,6 +477,12 @@ export const LISAInterface: React.FC = () => {
       setTranscript('');
       setError(null);
       setIsExpanded(true);
+      
+      // Notify backend that user started listening
+      if (socketRef.current) {
+        socketRef.current.emit('voice-status', { status: 'listening' });
+      }
+      
       recognitionRef.current.start();
     }
   };
@@ -441,6 +491,11 @@ export const LISAInterface: React.FC = () => {
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
+      
+      // Notify backend that listening stopped
+      if (socketRef.current) {
+        socketRef.current.emit('voice-status', { status: 'idle' });
+      }
     }
   };
 
@@ -599,6 +654,15 @@ export const LISAInterface: React.FC = () => {
               <IconButton
                 size="large"
                 onClick={isInConversation ? endConversation : startConversation}
+                onDoubleClick={() => {
+                  // Handle voice interruption on double-click
+                  audioService.stopSpeaking();
+                  setStatus('idle');
+                  if (socketRef.current) {
+                    socketRef.current.emit('voice-interruption');
+                    socketRef.current.emit('voice-status', { status: 'idle' });
+                  }
+                }}
                 disabled={status === 'processing' || status === 'error'}
                 sx={{
                   width: 80,
@@ -630,6 +694,17 @@ export const LISAInterface: React.FC = () => {
                 ? 'LISA is listening...' 
                 : 'Click microphone to start conversation'}
             </Typography>
+            
+            {/* Instruction Text */}
+            {status === 'speaking' && (
+              <Typography 
+                variant="caption" 
+                align="center" 
+                sx={{ mb: 2, display: 'block', color: 'rgba(255,255,255,0.8)' }}
+              >
+                Double-click microphone to interrupt LISA
+              </Typography>
+            )}
 
             {/* Progress Bar for Processing */}
             {status === 'processing' && (
@@ -793,6 +868,180 @@ export const LISAInterface: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSearchDialogOpen(false)} sx={{ color: 'white' }}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Customer Results Dialog */}
+      <Dialog
+        open={customerDialogOpen}
+        onClose={() => setCustomerDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white'
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: 'white' }}>
+          Customer Search Results
+          <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>
+            Found {customerResults.length} customer{customerResults.length !== 1 ? 's' : ''}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Grid container spacing={3}>
+            {customerResults.map((customer, index) => (
+              <Grid item xs={12} md={6} key={customer.id || index}>
+                <Card sx={{ 
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                }}>
+                  <CardContent>
+                    {/* Customer Header */}
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
+                        {customer.name}
+                      </Typography>
+                      {customer.company && (
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                          {customer.company}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    {/* Customer Details */}
+                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                          <strong>Email:</strong> {customer.email}
+                        </Typography>
+                        {customer.phone && (
+                          <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                            <strong>Phone:</strong> {customer.phone}
+                          </Typography>
+                        )}
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                          <strong>Location:</strong> {customer.city ? `${customer.city}, ` : ''}{customer.country}
+                        </Typography>
+                        {customer.address && (
+                          <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                            <strong>Address:</strong> {customer.address}
+                          </Typography>
+                        )}
+                      </Grid>
+                    </Grid>
+
+                    <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.2)', mb: 2 }} />
+
+                    {/* Order Statistics */}
+                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                      <Grid item xs={4}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography variant="h6" sx={{ color: '#4CAF50', fontWeight: 'bold' }}>
+                            {customer.orderCount || 0}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Orders
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={8}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography variant="h6" sx={{ color: '#2196F3', fontWeight: 'bold' }}>
+                            ${(customer.totalOrderValue || 0).toLocaleString()}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Total Value
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    {/* Last Order */}
+                    {customer.lastOrder ? (
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ color: 'white', mb: 1, fontWeight: 'bold' }}>
+                          Last Order:
+                        </Typography>
+                        <Box sx={{ 
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: 1,
+                          p: 1.5
+                        }}>
+                          <Grid container spacing={1}>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                                <strong>Order:</strong> {customer.lastOrder.orderNumber}
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                                <strong>Glass:</strong> {customer.lastOrder.glassType?.replace('_', ' ') || 'N/A'}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                                <strong>Value:</strong> ${customer.lastOrder.totalPrice?.toLocaleString() || '0'}
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                                <strong>Date:</strong> {
+                                  customer.lastOrder.orderDate 
+                                    ? new Date(customer.lastOrder.orderDate).toLocaleDateString()
+                                    : 'N/A'
+                                }
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12}>
+                              <Chip
+                                label={customer.lastOrder.status?.replace('_', ' ') || 'Unknown'}
+                                size="small"
+                                sx={{
+                                  backgroundColor: customer.lastOrder.status === 'DELIVERED' 
+                                    ? 'rgba(76, 175, 80, 0.3)' 
+                                    : customer.lastOrder.status === 'PENDING'
+                                    ? 'rgba(255, 152, 0, 0.3)'
+                                    : 'rgba(255, 255, 255, 0.2)',
+                                  color: 'white',
+                                  fontWeight: 'bold'
+                                }}
+                              />
+                            </Grid>
+                          </Grid>
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Box sx={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: 1,
+                        p: 1.5,
+                        textAlign: 'center'
+                      }}>
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                          No orders found
+                        </Typography>
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+          
+          {customerResults.length === 0 && (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                No customers found matching your search criteria
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCustomerDialogOpen(false)} sx={{ color: 'white' }}>
             Close
           </Button>
         </DialogActions>

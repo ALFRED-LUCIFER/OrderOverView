@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import Groq from 'groq-sdk';
 import { OrdersService } from '../orders/orders.service';
+import { CustomersService } from '../customers/customers.service';
+import { MailerService } from '../mailer/mailer.service';
 
 interface ConversationState {
   isUserSpeaking: boolean;
@@ -43,7 +45,11 @@ export class NaturalConversationService {
   private groq: Groq;
   private conversations = new Map<string, ConversationState>();
 
-  constructor(private ordersService?: OrdersService) {
+  constructor(
+    private ordersService: OrdersService,
+    private customersService: CustomersService,
+    private mailerService: MailerService
+  ) {
     this.groq = new Groq({
       apiKey: process.env.GROQ_API_KEY,
     });
