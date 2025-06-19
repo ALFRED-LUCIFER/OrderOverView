@@ -78,6 +78,22 @@ export class OrdersController {
     return this.ordersService.search(query);
   }
 
+  @Get('top-profit')
+  @ApiOperation({ summary: 'Get top maximum profit orders' })
+  @ApiQuery({ name: 'limit', description: 'Number of orders to return', required: false })
+  @ApiResponse({ status: 200, description: 'Top profit orders' })
+  findTopProfitOrders(@Query('limit') limit?: string) {
+    const orderLimit = limit ? parseInt(limit, 10) : 10;
+    return this.ordersService.findTopMaximumProfitOrders(orderLimit);
+  }
+
+  @Get('profit-analytics')
+  @ApiOperation({ summary: 'Get comprehensive profit analytics' })
+  @ApiResponse({ status: 200, description: 'Profit analytics data' })
+  getProfitAnalytics() {
+    return this.ordersService.getProfitAnalytics();
+  }
+
   @Get('by-customer/:customerId')
   @ApiOperation({ summary: 'Get orders by customer ID' })
   @ApiResponse({ status: 200, description: 'Orders for the customer' })

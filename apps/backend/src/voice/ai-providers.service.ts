@@ -126,6 +126,72 @@ export class AIProvidersService {
   }
 
   /**
+   * Create a real-time streaming connection with Deepgram
+   */
+  createDeepgramStreamingConnection(socketCallback: (data: any) => void): any {
+    try {
+      if (!this.deepgram) {
+        throw new Error('Deepgram not configured');
+      }
+
+      this.logger.log('🎤 Creating Deepgram streaming connection...');
+
+      const connection = this.deepgram.listen.live({
+        model: 'nova-2',
+        language: 'en-US',
+        smart_format: true,
+        punctuate: true,
+        interim_results: true,
+        endpointing: 300, // ms of silence before finalizing
+        utterance_end_ms: 1000,
+        vad_events: true,
+      });
+
+      connection.on('open', () => {
+        this.logger.log('✅ Deepgram streaming connection opened');
+        socketCallback({ type: 'connection', status: 'connected' });
+      });
+
+      connection.on('transcript', (data: any) => {
+        if (data.channel?.alternatives?.[0]?.transcript) {
+          const transcript = data.channel.alternatives[0].transcript;
+          const isFinal = data.is_final;
+          const confidence = data.channel.alternatives[0].confidence || 0;
+          
+          this.logger.log(`🎤 Deepgram ${isFinal ? 'FINAL' : 'interim'}: "${transcript}"`);
+          
+          socketCallback({
+            type: 'transcription',
+            transcript,
+            isFinal,
+            confidence,
+            provider: 'deepgram'
+          });
+        }
+      });
+
+      connection.on('metadata', (data: any) => {
+        this.logger.log('📊 Deepgram metadata:', data);
+      });
+
+      connection.on('error', (error: any) => {
+        this.logger.error('❌ Deepgram streaming error:', error);
+        socketCallback({ type: 'error', error: error.message });
+      });
+
+      connection.on('close', () => {
+        this.logger.log('🔚 Deepgram streaming connection closed');
+        socketCallback({ type: 'connection', status: 'disconnected' });
+      });
+
+      return connection;
+    } catch (error) {
+      this.logger.error('❌ Failed to create Deepgram streaming connection:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Detect intent using GROQ Llama (Primary provider)
    */
   async detectIntentWithGroq(text: string, context?: string[]): Promise<IntentDetectionResult> {

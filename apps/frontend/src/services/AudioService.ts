@@ -116,19 +116,67 @@ export class AudioService {
     }
 
     console.log(`🗣️ Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-    console.log('🎤 Using ElevenLabs ONLY for speech synthesis (TESTING MODE)');
+    console.log('🎤 Using ElevenLabs with browser TTS fallback');
 
+    // Try ElevenLabs first
     if (this.elevenLabsService) {
       try {
         await this.elevenLabsService.speak(text);
         return;
       } catch (error) {
         console.error('❌ ElevenLabs failed:', error);
-        throw new Error(`ElevenLabs TTS failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.log('🔄 Falling back to browser TTS...');
+        
+        // Fallback to browser TTS if ElevenLabs fails
+        try {
+          await this.speakWithBrowserTTS(text, options);
+          return;
+        } catch (browserError) {
+          console.error('❌ Browser TTS also failed:', browserError);
+          throw new Error(`Both ElevenLabs and browser TTS failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     } else {
-      throw new Error('ElevenLabs service not available - API key missing or service not initialized');
+      // Use browser TTS directly if ElevenLabs not available
+      console.log('🔄 ElevenLabs not available, using browser TTS...');
+      try {
+        await this.speakWithBrowserTTS(text, options);
+        return;
+      } catch (browserError) {
+        console.error('❌ Browser TTS failed:', browserError);
+        throw new Error(`Browser TTS failed: ${browserError instanceof Error ? browserError.message : String(browserError)}`);
+      }
     }
+  }
+
+  /**
+   * Browser TTS fallback method
+   */
+  private async speakWithBrowserTTS(text: string, options: TTSOptions = {}): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!('speechSynthesis' in window)) {
+        reject(new Error('Speech synthesis not supported'));
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = options.rate || 1;
+      utterance.pitch = options.pitch || 1;
+      utterance.volume = options.volume || 1;
+      utterance.lang = options.lang || 'en-US';
+
+      utterance.onend = () => {
+        console.log('✅ Browser TTS completed');
+        resolve();
+      };
+
+      utterance.onerror = (event) => {
+        console.error('❌ Browser TTS error:', event);
+        reject(new Error(`Browser TTS error: ${event.error}`));
+      };
+
+      window.speechSynthesis.speak(utterance);
+    });
   }
 
   /**

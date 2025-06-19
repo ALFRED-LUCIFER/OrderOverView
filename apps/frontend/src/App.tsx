@@ -33,6 +33,7 @@ import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
 import ReportsPage from './pages/ReportsPage';
+import TopProfitOrdersPage from './pages/TopProfitOrdersPage';
 // TechStackPage will be loaded lazily
 import BeautifulLISAInterface from './components/BeautifulLISAInterface';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -44,6 +45,7 @@ const menuItems = [
   { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
   { path: '/customers', label: 'Customers', icon: <PeopleIcon /> },
   { path: '/orders', label: 'Orders', icon: <AssignmentIcon /> },
+  { path: '/top-profit-orders', label: 'Top Profit Orders', icon: <AnalyticsIcon /> },
   { path: '/reports', label: 'Reports & Analytics', icon: <ReportsIcon /> },
   { path: '/voice-test', label: 'Voice Test', icon: <AnalyticsIcon /> },
   { path: '/tech-stack', label: 'Tech Stack', icon: <TechStackIcon /> },
@@ -232,6 +234,7 @@ function App() {
                 {React.createElement(React.lazy(() => import('./pages/TechStackPage')))}
               </Suspense>
             } />
+            <Route path="/top-profit-orders" element={<TopProfitOrdersPage />} />
           </Routes>
         </ErrorBoundary>
       </Box>

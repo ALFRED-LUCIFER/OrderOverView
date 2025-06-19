@@ -11,6 +11,7 @@ import {
 import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { VoiceService } from './voice.service';
+import { AIProvidersService } from './ai-providers.service';
 
 @WebSocketGateway({
   cors: {
@@ -42,11 +43,15 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     timestamp?: number,
     isAISpeaking?: boolean,
     isUserSpeaking?: boolean,
-    lastSpeechTime?: number
+    lastSpeechTime?: number,
+    deepgramConnection?: any,
   }>();
   private clientsByIP = new Map<string, Set<string>>(); // Track multiple connections from same IP
 
-  constructor(private voiceService: VoiceService) {}
+  constructor(
+    private voiceService: VoiceService,
+    private aiProvidersService: AIProvidersService,
+  ) {}
 
   handleConnection(client: Socket) {
     const connectTime = Date.now();
@@ -104,6 +109,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   handleDisconnect(client: Socket) {
     const clientInfo = this.connectedClients.get(client.id);
     const duration = clientInfo ? Date.now() - clientInfo.connectTime : 0;
+    
+    // Clean up Deepgram connection if exists
+    if (clientInfo?.deepgramConnection) {
+      try {
+        console.log(`🧹 Cleaning up Deepgram connection for client ${client.id}`);
+        clientInfo.deepgramConnection.finish();
+      } catch (error) {
+        console.error(`❌ Error cleaning up Deepgram connection:`, error);
+      }
+    }
     
     // Remove from IP tracking
     if (clientInfo?.ipAddress) {
@@ -364,5 +379,114 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   onModuleInit() {
     this.startCleanupInterval();
     console.log('🔧 LISA Voice Gateway initialized with connection monitoring');
+  }
+
+  @SubscribeMessage('start-streaming')
+  async handleStartStreaming(
+    @ConnectedSocket() client: Socket,
+  ) {
+    console.log(`🎤 Client ${client.id} starting real-time streaming...`);
+    
+    const clientInfo = this.connectedClients.get(client.id);
+    if (clientInfo) {
+      clientInfo.lastActivity = Date.now();
+      
+      try {
+        // Create Deepgram streaming connection
+        const deepgramConnection = this.aiProvidersService.createDeepgramStreamingConnection((data) => {
+          // Handle streaming transcription data
+          if (data.type === 'transcription') {
+            console.log(`🎤 Streaming transcript: "${data.transcript}" (Final: ${data.isFinal})`);
+            
+            client.emit('streaming-transcript', {
+              transcript: data.transcript,
+              isFinal: data.isFinal,
+              confidence: data.confidence,
+              provider: data.provider
+            });
+            
+            // If final transcript, also process it
+            if (data.isFinal && data.transcript.trim()) {
+              this.processStreamingTranscript(client, data.transcript, data.confidence);
+            }
+          } else if (data.type === 'connection') {
+            client.emit('streaming-status', { status: data.status });
+          } else if (data.type === 'error') {
+            client.emit('streaming-error', { error: data.error });
+          }
+        });
+        
+        // Store the connection for cleanup
+        clientInfo.deepgramConnection = deepgramConnection;
+        
+        console.log(`✅ Deepgram streaming started for client ${client.id}`);
+        
+      } catch (error) {
+        console.error(`❌ Failed to start streaming for client ${client.id}:`, error);
+        client.emit('streaming-error', { error: error.message });
+      }
+    }
+  }
+
+  @SubscribeMessage('streaming-audio')
+  async handleStreamingAudio(
+    @MessageBody() data: { audio: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const clientInfo = this.connectedClients.get(client.id);
+    if (clientInfo && clientInfo.deepgramConnection) {
+      try {
+        // Convert base64 back to buffer and send to Deepgram
+        const audioBuffer = Buffer.from(data.audio, 'base64');
+        clientInfo.deepgramConnection.send(audioBuffer);
+        clientInfo.lastActivity = Date.now();
+      } catch (error) {
+        console.error(`❌ Streaming audio error for client ${client.id}:`, error);
+        client.emit('streaming-error', { error: 'Audio streaming failed' });
+      }
+    }
+  }
+
+  @SubscribeMessage('stop-streaming')
+  async handleStopStreaming(
+    @ConnectedSocket() client: Socket,
+  ) {
+    console.log(`🛑 Client ${client.id} stopping streaming...`);
+    
+    const clientInfo = this.connectedClients.get(client.id);
+    if (clientInfo && clientInfo.deepgramConnection) {
+      try {
+        clientInfo.deepgramConnection.finish();
+        clientInfo.deepgramConnection = null;
+        console.log(`✅ Streaming stopped for client ${client.id}`);
+        client.emit('streaming-status', { status: 'disconnected' });
+      } catch (error) {
+        console.error(`❌ Error stopping streaming for client ${client.id}:`, error);
+      }
+    }
+  }
+
+  private async processStreamingTranscript(client: Socket, transcript: string, confidence: number) {
+    try {
+      console.log(`🎯 Processing streaming transcript: "${transcript}"`);
+      
+      // Process the transcript using the voice service
+      const result = await this.voiceService.processVoiceCommand(
+        transcript,
+        client.id,
+        {
+          isEndOfSpeech: true,
+          interimResults: false,
+          useNaturalConversation: true,
+        }
+      );
+
+      // Send the response back to the client
+      client.emit('voice-response', result);
+      
+    } catch (error) {
+      console.error(`❌ Error processing streaming transcript:`, error);
+      client.emit('streaming-error', { error: 'Failed to process transcript' });
+    }
   }
 }

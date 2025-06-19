@@ -8,24 +8,59 @@ async function bootstrap() {
 
   // Enable CORS for frontend - updated for production
   app.enableCors({
-    origin: [
-      'http://localhost:5173', 
-      'https://localhost:5173', 
-      'http://localhost:3000',
-      'https://localhost:3000',
-      // Vercel domains - include all possible variations
-      'https://order-over-view-frontend.vercel.app',
-      'https://order-over-view-frontend-git-main-soumitras-projects-cad3dd70.vercel.app',
-      /https:\/\/order-over-view-frontend.*\.vercel\.app$/,
-      /https:\/\/.*\.vercel\.app$/,
-      // Render domains
-      'https://your-frontend-url.onrender.com',
-      /https:\/\/.*\.onrender\.com$/,
-      // Environment variable for dynamic CLIENT_URL
-      process.env.CLIENT_URL
-    ].filter(Boolean), // Remove undefined values
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      
+      // Allow any localhost origin in development
+      if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          return callback(null, true);
+        }
+      }
+      
+      // Production allowed origins
+      const allowedOrigins = [
+        'http://localhost:5173', 
+        'http://localhost:5174',
+        'http://localhost:5175',
+        'https://localhost:5173', 
+        'http://localhost:3000',
+        'https://localhost:3000',
+        // Vercel domains
+        'https://order-over-view-frontend.vercel.app',
+        'https://order-over-view-frontend-git-main-soumitras-projects-cad3dd70.vercel.app',
+        // Environment variable for dynamic CLIENT_URL
+        process.env.CLIENT_URL
+      ].filter(Boolean);
+      
+      // Check if origin is in allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Check regex patterns for Vercel and other domains
+      const regexPatterns = [
+        /https:\/\/order-over-view-frontend.*\.vercel\.app$/,
+        /https:\/\/.*\.vercel\.app$/,
+        /https:\/\/.*\.onrender\.com$/,
+      ];
+      
+      for (const pattern of regexPatterns) {
+        if (pattern.test(origin)) {
+          return callback(null, true);
+        }
+      }
+      
+      // Log rejected origins for debugging
+      console.warn(`🚫 CORS: Rejected origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
     credentials: true,
+    optionsSuccessStatus: 200, // For legacy browser support
+    preflightContinue: false,
   });
 
   // Global validation pipe

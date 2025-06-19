@@ -164,4 +164,85 @@ export class OrdersService {
 
     return `ORD-${year}${month}${day}-${String(sequence).padStart(3, '0')}`;
   }
+
+  /**
+   * Find the top 10 orders with maximum profit (highest total price)
+   */
+  async findTopMaximumProfitOrders(limit: number = 10) {
+    return this.prisma.order.findMany({
+      include: {
+        customer: true,
+      },
+      orderBy: {
+        totalPrice: 'desc',
+      },
+      take: limit,
+    });
+  }
+
+  /**
+   * Get profit analytics and top performers
+   */
+  async getProfitAnalytics() {
+    // Get all orders with profit calculation
+    const orders = await this.prisma.order.findMany({
+      include: {
+        customer: true,
+      },
+      orderBy: {
+        totalPrice: 'desc',
+      },
+    });
+
+    // Calculate total revenue
+    const totalRevenue = orders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+    
+    // Get top 10 highest profit orders
+    const topProfitOrders = orders.slice(0, 10);
+    
+    // Calculate average order value
+    const averageOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
+    
+    // Get orders by status for profit analysis
+    const profitByStatus = orders.reduce((acc, order) => {
+      const status = order.status || 'UNKNOWN';
+      if (!acc[status]) {
+        acc[status] = { count: 0, totalRevenue: 0 };
+      }
+      acc[status].count++;
+      acc[status].totalRevenue += order.totalPrice || 0;
+      return acc;
+    }, {} as Record<string, { count: number; totalRevenue: number }>);
+
+    // Get top customers by revenue
+    const customerRevenue = orders.reduce((acc, order) => {
+      const customerId = order.customerId;
+      const customerName = order.customer?.name || 'Unknown';
+      if (!acc[customerId]) {
+        acc[customerId] = { 
+          customerName, 
+          totalRevenue: 0, 
+          orderCount: 0,
+          customerId 
+        };
+      }
+      acc[customerId].totalRevenue += order.totalPrice || 0;
+      acc[customerId].orderCount++;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const topCustomers = Object.values(customerRevenue)
+      .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
+      .slice(0, 10);
+
+    return {
+      totalRevenue,
+      totalOrders: orders.length,
+      averageOrderValue,
+      topProfitOrders,
+      profitByStatus,
+      topCustomers,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
 }

@@ -6,6 +6,7 @@ import { VoiceService } from './voice.service';
 import { EnhancedVoiceService } from './enhanced-voice.service';
 import { EnhancedIntentService } from './enhanced-intent.service';
 import { EnhancedElevenLabsService } from './enhanced-elevenlabs.service';
+import { OpenAITTSService } from './openai-tts.service';
 
 // Request/Response DTOs
 export interface TranscriptionRequest {
@@ -48,6 +49,7 @@ export class VoiceController {
     private readonly enhancedVoiceService: EnhancedVoiceService,
     private readonly enhancedIntentService: EnhancedIntentService,
     private readonly elevenLabsService: EnhancedElevenLabsService,
+    private readonly openaiTTSService: OpenAITTSService,
   ) {}
 
   @Get('health')
@@ -254,25 +256,62 @@ export class VoiceController {
   }
 
   /**
-   * Text-to-Speech endpoint (future implementation for server-side TTS)
+   * Text-to-Speech endpoint with OpenAI and ElevenLabs support
    */
   @Post('tts')
   async textToSpeech(@Body() request: TTSRequest, @Res() response: Response) {
     try {
-      console.log(`🗣️ LISA: Converting text to speech with ${request.provider || 'default'} provider`);
+      console.log(`🗣️ LISA: Converting text to speech with ${request.provider || 'auto'} provider`);
       
-      // For now, return instructions for client-side TTS
-      // This can be enhanced to return actual audio in the future
-      response.json({
-        message: 'TTS processing complete',
-        instruction: 'Use client-side TTS services (ElevenLabs, OpenAI, or Browser)',
-        text: request.text,
-        provider: request.provider || 'client-side'
-      });
+      const preferredProvider = process.env.PREFERRED_TTS_PROVIDER || 'openai';
+      const provider = request.provider || preferredProvider;
+      
+      if (provider === 'openai' && this.openaiTTSService.isConfigured()) {
+        // Use OpenAI TTS
+        const audioBuffer = await this.openaiTTSService.generateSpeech(request.text);
+        
+        response.set({
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': audioBuffer.length.toString(),
+          'Cache-Control': 'no-cache'
+        });
+        
+        return response.send(audioBuffer);
+        
+      } else if (provider === 'elevenlabs' && this.elevenLabsService.isAvailable()) {
+        // Use ElevenLabs TTS
+        const result = await this.elevenLabsService.textToSpeech(request.text);
+        
+        if (result.success && result.audioBuffer) {
+          response.set({
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': result.audioBuffer.length.toString(),
+            'Cache-Control': 'no-cache'
+          });
+          
+          return response.send(result.audioBuffer);
+        } else {
+          throw new Error(result.error || 'ElevenLabs TTS failed');
+        }
+        
+      } else {
+        // Return instructions for client-side TTS as fallback
+        response.json({
+          message: 'TTS processing complete - use client-side fallback',
+          instruction: 'Use browser Speech Synthesis API',
+          text: request.text,
+          provider: 'browser',
+          fallback: true
+        });
+      }
 
     } catch (error) {
       console.error('❌ LISA: TTS error:', error);
-      response.status(500).json({ error: `TTS failed: ${error.message}` });
+      response.status(500).json({ 
+        error: `TTS failed: ${error.message}`,
+        fallback: true,
+        instruction: 'Use browser Speech Synthesis API'
+      });
     }
   }
 
@@ -300,7 +339,69 @@ export class VoiceController {
     };
   }
 
-  // ElevenLabs Enhanced Voice Endpoints
+  // OpenAI TTS Endpoints
+
+  @Get('openai/status')
+  async getOpenAITTSStatus() {
+    return {
+      available: this.openaiTTSService.isConfigured(),
+      configured: !!process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_TTS_MODEL || 'tts-1-hd',
+      voice: process.env.OPENAI_TTS_VOICE || 'nova',
+      status: this.openaiTTSService.isConfigured() ? 'ready' : 'not configured'
+    };
+  }
+
+  @Post('openai/speak')
+  async openAISpeak(
+    @Body() body: { text: string },
+    @Res() res: Response
+  ) {
+    try {
+      if (!this.openaiTTSService.isConfigured()) {
+        return res.status(400).json({
+          error: 'OpenAI TTS not configured',
+          success: false
+        });
+      }
+
+      const audioBuffer = await this.openaiTTSService.generateSpeech(body.text);
+
+      // Set appropriate headers for audio response
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audioBuffer.length.toString(),
+        'Cache-Control': 'no-cache'
+      });
+
+      return res.send(audioBuffer);
+
+    } catch (error) {
+      console.error('❌ OpenAI TTS speak error:', error);
+      return res.status(500).json({
+        error: 'OpenAI TTS failed',
+        success: false
+      });
+    }
+  }
+
+  @Post('openai/test')
+  async testOpenAITTS() {
+    try {
+      const isWorking = await this.openaiTTSService.testService();
+      return {
+        working: isWorking,
+        configured: this.openaiTTSService.isConfigured(),
+        message: isWorking ? 'OpenAI TTS is working correctly' : 'OpenAI TTS test failed'
+      };
+    } catch (error) {
+      return {
+        working: false,
+        configured: this.openaiTTSService.isConfigured(),
+        error: error.message
+      };
+    }
+  }
 
   @Get('elevenlabs/status')
   async getElevenLabsStatus() {
@@ -507,7 +608,7 @@ export class VoiceController {
   async enhancedSpeak(
     @Body() request: {
       text: string;
-      provider?: 'elevenlabs' | 'browser';
+      provider?: 'openai' | 'elevenlabs' | 'browser';
       enhancedMode?: boolean;
       voice?: string;
     },
@@ -516,13 +617,27 @@ export class VoiceController {
     try {
       console.log('🔊 Enhanced TTS request:', request.text.substring(0, 50) + '...');
       
-      if (request.provider === 'elevenlabs' && process.env.ELEVENLABS_API_KEY) {
+      const preferredProvider = process.env.PREFERRED_TTS_PROVIDER || 'openai';
+      const provider = request.provider || preferredProvider;
+      
+      if (provider === 'openai' && this.openaiTTSService.isConfigured()) {
+        // Use OpenAI TTS
+        const audioBuffer = await this.openaiTTSService.generateSpeech(request.text);
+        
+        res.set({
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': audioBuffer.length.toString(),
+        });
+        
+        return res.send(audioBuffer);
+        
+      } else if (provider === 'elevenlabs' && process.env.ELEVENLABS_API_KEY) {
         // Use Enhanced ElevenLabs service
         const ttsResult = await this.elevenLabsService.textToSpeech(
           request.text,
           {
             voiceId: request.voice || process.env.ELEVENLABS_VOICE_ID,
-            modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2',
+            modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v1',
             stability: parseFloat(process.env.VOICE_STABILITY || '0.75'),
             similarityBoost: parseFloat(process.env.VOICE_SIMILARITY_BOOST || '0.75'),
             style: parseFloat(process.env.VOICE_STYLE || '0.2')

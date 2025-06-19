@@ -144,3 +144,17 @@ export const useOrdersByStatus = (status: string) => {
     enabled: !!status,
   });
 };
+
+export const useTopProfitOrders = (limit?: number) => {
+  return useQuery({
+    queryKey: ['orders', 'top-profit', limit],
+    queryFn: () => ordersApi.getTopProfitOrders(limit).then((res) => res.data),
+  });
+};
+
+export const useProfitAnalytics = () => {
+  return useQuery({
+    queryKey: ['orders', 'profit-analytics'],
+    queryFn: () => ordersApi.getProfitAnalytics().then((res) => res.data),
+  });
+};

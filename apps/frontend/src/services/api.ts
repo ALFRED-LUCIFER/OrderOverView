@@ -74,6 +74,10 @@ export const ordersApi = {
     api.get<Order[]>(`/orders/by-status/${status}`),
   generateOrderNumber: () => 
     api.get<GenerateOrderNumberResponse>('/orders/generate-order-number'),
+  getTopProfitOrders: (limit?: number) => 
+    api.get<Order[]>(`/orders/top-profit${limit ? `?limit=${limit}` : ''}`),
+  getProfitAnalytics: () => 
+    api.get('/orders/profit-analytics'),
 };
 
 export default api;

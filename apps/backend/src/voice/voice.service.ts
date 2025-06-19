@@ -199,6 +199,8 @@ export class VoiceService {
   }
 
   clearSession(sessionId: string): void {
+    console.log(`🧹 Clearing session ${sessionId}`);
     this.conversationHistory.delete(sessionId);
+    this.naturalConversationService?.clearSession?.(sessionId);
   }
 }
