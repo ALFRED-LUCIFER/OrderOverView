@@ -34,7 +34,7 @@ import OrdersPage from './pages/OrdersPage';
 import VoiceTestPage from './pages/VoiceTestPage';
 import ReportsPage from './pages/ReportsPage';
 // TechStackPage will be loaded lazily
-import EnhancedLISAInterface from './components/EnhancedLISAInterface';
+import BeautifulLISAInterface from './components/BeautifulLISAInterface';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider } from './contexts/NotificationContext';
 
@@ -236,9 +236,9 @@ function App() {
         </ErrorBoundary>
       </Box>
 
-      {/* Enhanced LISA Voice Interface - Fixed position overlay */}
+      {/* Beautiful LISA Voice Interface - Fixed position overlay */}
       {import.meta.env.VITE_ENABLE_VOICE === 'true' && (
-        <EnhancedLISAInterface />
+        <BeautifulLISAInterface />
       )}
     </Box>
   </NotificationProvider>

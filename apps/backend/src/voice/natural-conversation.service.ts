@@ -531,7 +531,7 @@ SPECIAL INSTRUCTIONS:
 Respond naturally and conversationally as LISA. If taking action, add [ACTION:${intent.intent}] at the end.`;
 
     try {
-      const aiResult = await this.aiProvidersService.generateResponseWithOpenAI(
+      const aiResult = await this.aiProvidersService.generateResponseWithGroq(
         transcript,
         intent.intent,
         context.slice(-8),

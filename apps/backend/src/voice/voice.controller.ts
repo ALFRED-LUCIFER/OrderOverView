@@ -590,4 +590,49 @@ export class VoiceController {
       throw error;
     }
   }
+
+  /**
+   * Natural conversation endpoint for direct text input
+   */
+  @Post('conversation')
+  async naturalConversation(
+    @Body() request: {
+      message: string;
+      sessionId?: string;
+      context?: string[];
+    }
+  ) {
+    try {
+      console.log('💬 Natural conversation request:', request.message);
+      
+      const sessionId = request.sessionId || 'api-session';
+      const result = await this.voiceService.processVoiceCommand(
+        request.message,
+        sessionId,
+        {
+          isEndOfSpeech: true,
+          interimResults: false,
+          useNaturalConversation: true
+        }
+      );
+
+      return {
+        response: result.response,
+        action: result.action,
+        data: result.data,
+        shouldSpeak: result.shouldSpeak,
+        confidence: result.confidence,
+        timestamp: new Date().toISOString(),
+        sessionId
+      };
+
+    } catch (error) {
+      console.error('❌ Natural conversation failed:', error);
+      return {
+        response: "I'm sorry, I'm having trouble processing your request right now. Please try again.",
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }

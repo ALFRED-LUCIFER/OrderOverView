@@ -36,7 +36,7 @@ export class AudioService {
   }
 
   /**
-   * Initialize audio service - Simplified for ElevenLabs testing
+   * Initialize audio service - Enhanced for browser autoplay policies
    */
   async initialize(): Promise<void> {
     console.log('🎤 Initializing AudioService (ElevenLabs TESTING MODE)...');
@@ -46,6 +46,24 @@ export class AudioService {
 
       if (!this.elevenLabsService) {
         throw new Error('ElevenLabs service not available - API key missing');
+      }
+
+      // Test if we can play audio (browser autoplay policy)
+      try {
+        console.log('🧪 Testing audio playback capability...');
+        const testBlob = new Blob([''], { type: 'audio/wav' });
+        const testAudio = new Audio(URL.createObjectURL(testBlob));
+        
+        // Try to play and immediately pause to test autoplay policy
+        const playPromise = testAudio.play();
+        if (playPromise) {
+          await playPromise;
+          testAudio.pause();
+        }
+        console.log('✅ Audio playback test successful');
+      } catch (autoplayError) {
+        console.warn('⚠️ Audio autoplay blocked by browser:', autoplayError);
+        // Continue initialization but note the limitation
       }
 
       this.isInitialized = true;

@@ -30,6 +30,9 @@ playwright/.cache/
 
 # Environment variables
 .env
+.env.*
+!.env.example
+!.env.template
 .env.local
 .env.development.local
 .env.test.local
@@ -137,3 +140,27 @@ storage/
 *.backup
 *.bak
 *.tmp
+
+# Test and debug files (prevent future accumulation)
+*test*.html
+*debug*.html
+*test*.js
+*debug*.js
+*inspect*.js
+*monitor*.js
+test-*.sh
+setup-*.sh
+*.webm
+debug-*.html
+chrome-*.html
+console-*.html
+vercel-*.html
+websocket-*.html
+snackbar-*.html
+lisa-*.html
+elevenlabs-*.html
+speech-*.html
+frontend-*.html
+
+# Temporary and generated files
+cleanup-*.sh

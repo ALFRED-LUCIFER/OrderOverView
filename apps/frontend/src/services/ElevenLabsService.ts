@@ -113,7 +113,7 @@ export class ElevenLabsService {
    */
   async getStatus(): Promise<ElevenLabsStatus> {
     try {
-      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/status`);
+      const response = await fetch(`${this.backendUrl}/api/voice/elevenlabs/status`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -131,7 +131,7 @@ export class ElevenLabsService {
    */
   async getVoices(): Promise<ElevenLabsVoice[]> {
     try {
-      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/voices`);
+      const response = await fetch(`${this.backendUrl}/api/voice/elevenlabs/voices`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -150,7 +150,7 @@ export class ElevenLabsService {
    */
   async getQuota(): Promise<ElevenLabsQuota> {
     try {
-      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/quota`);
+      const response = await fetch(`${this.backendUrl}/api/voice/elevenlabs/quota`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -171,7 +171,7 @@ export class ElevenLabsService {
     try {
       console.log('🧪 Testing ElevenLabs connection through backend...');
       
-      const response = await fetch(`${this.backendUrl}/voice/elevenlabs/test`, {
+      const response = await fetch(`${this.backendUrl}/api/voice/elevenlabs/test`, {
         method: 'POST'
       });
 
@@ -196,7 +196,7 @@ export class ElevenLabsService {
       voiceConfig: voiceConfig || {}
     };
 
-    const response = await fetch(`${this.backendUrl}/voice/elevenlabs/speak`, {
+    const response = await fetch(`${this.backendUrl}/api/voice/elevenlabs/speak`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -220,36 +220,86 @@ export class ElevenLabsService {
   }
 
   /**
-   * Play audio blob
+   * Play audio blob with better browser compatibility
    */
   private async playAudio(audioBlob: Blob): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      
-      this.currentAudio = audio;
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Create audio URL
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        console.log(`🎵 Audio blob size: ${audioBlob.size} bytes`);
+        console.log(`🎵 Audio URL created: ${audioUrl.substring(0, 50)}...`);
+        
+        this.currentAudio = audio;
 
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        console.log('✅ ElevenLabs speech completed');
-        resolve();
-      };
+        // Set up event listeners
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudio = null;
+          console.log('✅ ElevenLabs speech completed');
+          resolve();
+        };
 
-      audio.onerror = (error) => {
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        console.error('❌ Audio playback error:', error);
-        reject(new Error('Audio playback failed'));
-      };
+        audio.onerror = (error) => {
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudio = null;
+          console.error('❌ Audio playback error:', error);
+          reject(new Error(`Audio playback failed: ${error}`));
+        };
 
-      audio.oncanplaythrough = () => {
-        console.log('🎤 Starting ElevenLabs audio playback');
-        audio.play().catch(reject);
-      };
+        audio.onloadstart = () => {
+          console.log('🔄 Audio loading started');
+        };
 
-      // Load the audio
-      audio.load();
+        audio.oncanplay = () => {
+          console.log('✅ Audio can start playing');
+        };
+
+        audio.oncanplaythrough = () => {
+          console.log('✅ Audio can play through without buffering');
+        };
+
+        // Set audio properties for better compatibility
+        audio.preload = 'auto';
+        audio.crossOrigin = 'anonymous';
+        
+        // Try to resume audio context if suspended (Chrome autoplay policy)
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+          console.log('🔄 Resuming suspended AudioContext...');
+          await this.audioContext.resume();
+        }
+
+        // Load the audio first
+        audio.load();
+
+        // Wait a moment for loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Attempt to play with error handling
+        console.log('🎤 Attempting to play ElevenLabs audio...');
+        try {
+          const playPromise = audio.play();
+          if (playPromise) {
+            await playPromise;
+            console.log('🔊 Audio playback started successfully');
+          }
+        } catch (playError: any) {
+          console.error('❌ Audio play() failed:', playError);
+          
+          // Handle autoplay policy errors
+          if (playError?.name === 'NotAllowedError') {
+            reject(new Error('Audio playback blocked by browser. User interaction required.'));
+          } else {
+            reject(new Error(`Audio playback failed: ${playError?.message || playError}`));
+          }
+        }
+
+      } catch (error) {
+        console.error('❌ Audio setup failed:', error);
+        reject(error);
+      }
     });
   }
 

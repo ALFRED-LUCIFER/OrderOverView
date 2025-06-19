@@ -64,68 +64,6 @@ export class AIProvidersService {
   }
 
   /**
-   * Transcribe audio using OpenAI Whisper
-   */
-  async transcribeWithOpenAI(audioBuffer: Buffer, mimeType: string = 'audio/webm'): Promise<TranscriptionResult> {
-    try {
-      if (!this.openai) {
-        throw new Error('OpenAI not configured');
-      }
-
-      const file = new File([audioBuffer], 'audio.webm', { type: mimeType });
-      
-      const transcription = await this.openai.audio.transcriptions.create({
-        file: file,
-        model: 'whisper-1',
-        language: 'en',
-        response_format: 'json',
-      });
-
-      return {
-        text: transcription.text,
-        confidence: 0.9, // Whisper doesn't provide confidence scores
-        provider: 'openai',
-      };
-    } catch (error) {
-      this.logger.error('OpenAI transcription failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Transcribe audio using Deepgram
-   */
-  async transcribeWithDeepgram(audioBuffer: Buffer): Promise<TranscriptionResult> {
-    try {
-      if (!this.deepgram) {
-        throw new Error('Deepgram not configured');
-      }
-
-      const response = await this.deepgram.listen.prerecorded.transcribeFile(
-        audioBuffer,
-        {
-          model: 'nova-2',
-          language: 'en-US',
-          smart_format: true,
-          punctuate: true,
-          diarize: false,
-        }
-      );
-
-      const transcript = response.results?.channels?.[0]?.alternatives?.[0];
-      
-      return {
-        text: transcript?.transcript || '',
-        confidence: transcript?.confidence || 0,
-        provider: 'deepgram',
-      };
-    } catch (error) {
-      this.logger.error('Deepgram transcription failed:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Detect intent using GROQ Llama (Primary provider)
    */
   async detectIntentWithGroq(text: string, context?: string[]): Promise<IntentDetectionResult> {
@@ -243,33 +181,6 @@ export class AIProvidersService {
       this.logger.error('GROQ conversation failed:', error);
       throw error;
     }
-  }
-
-  /**
-   * Ensemble method for intent detection with GROQ priority
-   */
-  async detectIntentEnsemble(text: string, context?: string[]): Promise<IntentDetectionResult> {
-    // Try GROQ first, then fallback to other providers
-    const providers = [
-      () => this.detectIntentWithGroq(text, context),
-      () => this.detectIntentWithClaude(text, context),
-      () => this.detectIntentWithOpenAI(text, context),
-    ];
-
-    for (const provider of providers) {
-      try {
-        const result = await provider();
-        this.logger.log(`✅ Intent detection succeeded with ${result.provider}: ${result.intent}`);
-        return result;
-      } catch (error) {
-        this.logger.warn(`❌ Provider failed, trying next: ${error.message}`);
-        continue;
-      }
-    }
-
-    // If all AI providers fail, use fallback pattern matching
-    this.logger.warn('All AI providers failed, using fallback pattern matching');
-    return this.fallbackIntentDetection(text);
   }
 
   /**
@@ -391,6 +302,33 @@ export class AIProvidersService {
       this.logger.error('Claude intent detection failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Ensemble method for intent detection with GROQ priority
+   */
+  async detectIntentEnsemble(text: string, context?: string[]): Promise<IntentDetectionResult> {
+    // Try GROQ first, then fallback to other providers
+    const providers = [
+      () => this.detectIntentWithGroq(text, context),
+      () => this.detectIntentWithClaude(text, context),
+      () => this.detectIntentWithOpenAI(text, context),
+    ];
+
+    for (const provider of providers) {
+      try {
+        const result = await provider();
+        this.logger.log(`✅ Intent detection succeeded with ${result.provider}: ${result.intent}`);
+        return result;
+      } catch (error) {
+        this.logger.warn(`❌ Provider failed, trying next: ${error.message}`);
+        continue;
+      }
+    }
+
+    // If all AI providers fail, use fallback pattern matching
+    this.logger.warn('All AI providers failed, using fallback pattern matching');
+    return this.fallbackIntentDetection(text);
   }
 
   /**
